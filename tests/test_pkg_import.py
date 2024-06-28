@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: MIT
-# Copyright © 2021 André Santos
+# Copyright © 2024 André Santos
 
 ###############################################################################
 # Imports
 ###############################################################################
 
-import bakeapy
+import codebonsai
 
 ###############################################################################
 # Tests
@@ -17,6 +17,6 @@ def test_import_was_ok():
 
 
 def test_pkg_has_version():
-    assert hasattr(bakeapy, '__version__')
-    assert isinstance(bakeapy.__version__, str)
-    assert bakeapy.__version__ != ''
+    assert hasattr(codebonsai, '__version__')
+    assert isinstance(codebonsai.__version__, str)
+    assert codebonsai.__version__ != ''

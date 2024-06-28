@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright © 2021 André Santos
+# Copyright © 2024 André Santos
 
 ###############################################################################
 # Imports
@@ -12,8 +12,8 @@ from setuptools import find_packages, setup
 # Constants
 ###############################################################################
 
-PROJECT = 'bake-a-py'
-PYTHON_PKG = 'bakeapy'
+PROJECT = 'code-bonsai'
+PYTHON_PKG = 'codebonsai'
 HERE = Path(__file__).parent
 
 ###############################################################################

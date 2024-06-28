@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-# Copyright © 2021 André Santos
+# Copyright © 2024 André Santos
 
 """
 Module that contains the command line program.
@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 import argparse
 import sys
 
-from bakeapy import __version__ as current_version
+from codebonsai import __version__ as current_version
 
 ###############################################################################
 # Argument Parsing
