@@ -18,12 +18,18 @@ Some of the structure of this file came from this StackExchange question:
 # Imports
 ###############################################################################
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Final, List, Optional
 
 import argparse
 import sys
 
 from codebonsai import __version__ as current_version
+
+###############################################################################
+# Constants
+###############################################################################
+
+PROG: Final[str] = 'codebonsai'
 
 ###############################################################################
 # Argument Parsing
@@ -35,11 +41,17 @@ def parse_arguments(argv: Optional[List[str]]) -> Dict[str, Any]:
     parser = argparse.ArgumentParser(description=msg)
 
     parser.add_argument(
-        '--version', dest='version', action='store_true', help='Prints the program version.'
+        '--version',
+        action='version',
+        version=f'{PROG} {current_version}',
+        help='prints the program version',
     )
 
     parser.add_argument(
-        'args', metavar='ARG', nargs=argparse.ZERO_OR_MORE, help='An argument for the program.'
+        'args',
+        metavar='ARG',
+        nargs=argparse.REMAINDER,
+        help='Arguments for the program.'
     )
 
     args = parser.parse_args(args=argv)
