@@ -17,7 +17,7 @@ Why does this file exist, and why __main__? For more info, read:
 
 import sys
 
-from codebonsai.cli import main
+from cppbonsai.cli import main
 
 ###############################################################################
 # Entry Point

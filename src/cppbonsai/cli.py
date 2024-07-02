@@ -23,13 +23,13 @@ from typing import Any, Dict, Final, List, Optional
 import argparse
 import sys
 
-from codebonsai import __version__ as current_version
+from cppbonsai import __version__ as current_version
 
 ###############################################################################
 # Constants
 ###############################################################################
 
-PROG: Final[str] = 'codebonsai'
+PROG: Final[str] = 'cppbonsai'
 
 ###############################################################################
 # Argument Parsing

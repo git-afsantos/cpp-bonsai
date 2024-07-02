@@ -12,8 +12,8 @@ from setuptools import find_packages, setup
 # Constants
 ###############################################################################
 
-PROJECT = 'code-bonsai'
-PYTHON_PKG = 'codebonsai'
+PROJECT = 'cpp-bonsai'
+PYTHON_PKG = 'cppbonsai'
 HERE = Path(__file__).parent
 
 ###############################################################################

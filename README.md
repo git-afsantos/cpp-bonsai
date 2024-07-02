@@ -1,6 +1,6 @@
-# Code Bonsai
+# C++ Bonsai
 
-This project aims to provide a general-purpose representation for Abstract Syntax Trees, agnostic of the underlying programming language.
+This project aims to provide an Abstract Syntax Tree representation for C++ programs.
 
 - [GitHub Features](#github-features)
 - [Tooling](#tooling)
