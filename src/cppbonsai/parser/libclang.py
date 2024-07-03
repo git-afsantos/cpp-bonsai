@@ -5,7 +5,7 @@
 # Imports
 ###############################################################################
 
-from typing import Final, Iterable, Optional
+from typing import Final, Iterable, List, Optional, Tuple
 
 from contextlib import contextmanager
 from ctypes import ArgumentError
@@ -38,7 +38,7 @@ class ClangParser:
     database: Optional[clang.CompilationDatabase] = None
     db_path: Optional[Path] = None
     _index: Optional[clang.Index] = None
-    workspace: str = ''
+    workspace: Optional[Path] = None
 
     def parse(self, file_path: Path):
         if self.database is None:
@@ -60,12 +60,12 @@ class ClangParser:
                 unit: clang.TranslationUnit = self._index.parse(None, args=args)
                 check_compilation_problems(unit)
                 if just_ast:
-                    return self._ast_str(unit.cursor)
+                    return ast_str(unit.cursor, workspace=self.workspace)
                 #self._ast_analysis(unit.cursor)
 
         #self.global_scope._afterpass()
         #return self.global_scope
-        return self._ast_str(unit.cursor)
+        return ast_str(unit.cursor, workspace=self.workspace)
 
     def _parse_without_db(self, file_path: Path, just_ast: bool = True):
         # ----- command retrieval ---------------------------------------------
@@ -76,7 +76,6 @@ class ClangParser:
                 args.append(f'-I{include_dir}')
 
             # args.append(str(file_path))
-            self.workspace = str(file_path.parent)
 
             if self._index is None:
                 self._index = clang.Index.create()
@@ -85,35 +84,12 @@ class ClangParser:
             unit: clang.TranslationUnit = self._index.parse(str(file_path), args)
             check_compilation_problems(unit)
             if just_ast:
-                return self._ast_str(unit.cursor)
+                return ast_str(unit.cursor, workspace=self.workspace)
             #self._ast_analysis(unit.cursor)
 
         #self.global_scope._afterpass()
         #return self.global_scope
-        return self._ast_str(unit.cursor)
-
-    def _ast_str(self, top_cursor: clang.Cursor) -> str:
-        assert top_cursor.kind == CK.TRANSLATION_UNIT
-
-        lines = []
-        for cursor in top_cursor.get_children():
-            if (cursor.location.file
-                    and cursor.location.file.name.startswith(self.workspace)):
-                lines.append(cursor_str(cursor, 0))
-                indent = 0
-                stack = list(cursor.get_children())
-                stack.reverse()
-                stack.append(1)
-                while stack:
-                    c = stack.pop()
-                    if isinstance(c, int):
-                        indent += c
-                    else:
-                        lines.append(cursor_str(c, indent))
-                        stack.append(-1)
-                        stack.extend(reversed(list(c.get_children())))
-                        stack.append(1)
-        return '\n'.join(lines)
+        return ast_str(unit.cursor, workspace=self.workspace)
 
 
 ###############################################################################
@@ -138,7 +114,7 @@ def check_compilation_problems(translation_unit: clang.TranslationUnit):
             logger.warning(diagnostic.spelling)
 
 
-def cursor_str(cursor: clang.Cursor, indent: int) -> str:
+def cursor_str(cursor: clang.Cursor, indent: int = 0) -> str:
     line = 0
     col = 0
     try:
@@ -152,3 +128,29 @@ def cursor_str(cursor: clang.Cursor, indent: int) -> str:
     tokens = len(list(cursor.get_tokens()))
     prefix = indent * '| '
     return f'{prefix}[{line}:{col}] {name}: {spell} [{tokens} tokens]'
+
+
+def ast_str(top_cursor: clang.Cursor, workspace: Optional[Path] = None) -> str:
+    assert top_cursor.kind == CK.TRANSLATION_UNIT
+
+    stack: List[Tuple[int, clang.Cursor]] = []
+    for cursor in top_cursor.get_children():
+        loc_file: Optional[clang.File] = cursor.location.file
+        if loc_file is None:
+            continue
+        file_path: Path = Path(loc_file.name)
+        if workspace and (workspace not in file_path.parents):
+            continue
+        # if not loc_file.name.startswith(str(self.workspace)):
+        #     continue
+        stack.append((0, cursor))
+
+    stack.reverse()
+    lines: List[str] = []
+    while stack:
+        indent, cursor = stack.pop()
+        lines.append(cursor_str(cursor, indent=indent))
+        for child in reversed(list(cursor.get_children())):
+            stack.append((indent + 1, child))
+
+    return '\n'.join(lines)

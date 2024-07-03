@@ -106,6 +106,7 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
     for arg in args['args']:
         logger.debug(f'file path argument: {arg}')
         file_path = Path(arg).resolve(strict=True)
+        parser.workspace = file_path.parent
         logger.debug(f'resolved file path: {file_path}')
         print('[AST]', file_path)
         print(parser.parse(file_path))
