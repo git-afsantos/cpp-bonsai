@@ -5,15 +5,14 @@
 # Imports
 ###############################################################################
 
-from typing import Any, Dict, Final, Iterable, List, Mapping, NewType, Optional, Tuple
+from typing import Iterable, Optional
 
 from contextlib import contextmanager
 from ctypes import ArgumentError
-from enum import Enum, auto
 import os
 from pathlib import Path
 
-from attrs import define, field, frozen
+from attrs import define, field
 import clang.cindex as clang
 
 ###############################################################################
