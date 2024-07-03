@@ -21,9 +21,9 @@ Some of the structure of this file came from this StackExchange question:
 from typing import Any, Dict, Final, List, Optional
 
 import argparse
+import logging
 from pathlib import Path
 import sys
-from traceback import print_exc
 
 from cppbonsai import __version__ as current_version
 from cppbonsai.parser.libclang import ClangParser
@@ -33,6 +33,8 @@ from cppbonsai.parser.libclang import ClangParser
 ###############################################################################
 
 PROG: Final[str] = 'cppbonsai'
+
+logger: Final[logging.Logger] = logging.getLogger(__name__)
 
 ###############################################################################
 # Argument Parsing
@@ -77,7 +79,7 @@ def load_configs(args: Dict[str, Any]) -> Dict[str, Any]:
         return config
     except Exception as err:
         # log or raise errors
-        print(err, file=sys.stderr)
+        logger.exception(str(err))
         if str(err) == 'Really Bad':
             raise err
 
@@ -92,8 +94,8 @@ def load_configs(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
-    print(f'Arguments: {args}')
-    print(f'Configurations: {configs}')
+    logger.debug(f'Arguments: {args}')
+    logger.debug(f'Configurations: {configs}')
 
     parser = ClangParser(
         lib_path=Path('/usr/lib/llvm-15/lib'),
@@ -102,7 +104,9 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
     )
 
     for arg in args['args']:
+        logger.debug(f'file path argument: {arg}')
         file_path = Path(arg).resolve(strict=True)
+        logger.debug(f'resolved file path: {file_path}')
         print('[AST]', file_path)
         print(parser.parse(file_path))
 
@@ -114,6 +118,7 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_arguments(argv)
+    logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
 
     try:
         # Load additional config files here, e.g., from a path given via args.
@@ -122,7 +127,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         do_real_work(args, config)
 
     except KeyboardInterrupt:
-        print('Aborted manually.', file=sys.stderr)
+        logging.error('Aborted manually.')
         return 1
 
     except Exception as err:
@@ -130,8 +135,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # Turn exceptions into appropriate logs and/or console output.
 
         print('An unhandled exception crashed the application!', file=sys.stderr)
-        print(err, file=sys.stderr)
-        print_exc(file=sys.stderr)
+        logging.exception(str(err))
 
         # Non-zero return code to signal error.
         # It can, of course, be more fine-grained than this general code.

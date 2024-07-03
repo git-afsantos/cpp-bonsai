@@ -5,10 +5,11 @@
 # Imports
 ###############################################################################
 
-from typing import Iterable, Optional
+from typing import Final, Iterable, Optional
 
 from contextlib import contextmanager
 from ctypes import ArgumentError
+import logging
 import os
 from pathlib import Path
 
@@ -20,6 +21,8 @@ import clang.cindex as clang
 ###############################################################################
 
 CK = clang.CursorKind
+
+logger: Final[logging.Logger] = logging.getLogger(__name__)
 
 ###############################################################################
 # Parser
@@ -79,7 +82,7 @@ class ClangParser:
                 self._index = clang.Index.create()
 
             # ----- parsing and AST analysis ----------------------------------
-            unit = self._index.parse(str(file_path), args)
+            unit: clang.TranslationUnit = self._index.parse(str(file_path), args)
             check_compilation_problems(unit)
             if just_ast:
                 return self._ast_str(unit.cursor)
@@ -130,11 +133,9 @@ def working_directory(path: Path):
 
 
 def check_compilation_problems(translation_unit: clang.TranslationUnit):
-    if translation_unit.diagnostics:
-        for diagnostic in translation_unit.diagnostics:
-            if diagnostic.severity >= clang.Diagnostic.Error:
-                # logging.warning(diagnostic.spelling)
-                print('WARNING', diagnostic.spelling)
+    for diagnostic in (translation_unit.diagnostics or ()):
+        if diagnostic.severity >= clang.Diagnostic.Error:
+            logger.warning(diagnostic.spelling)
 
 
 def cursor_str(cursor: clang.Cursor, indent: int) -> str:
