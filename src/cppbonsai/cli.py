@@ -23,6 +23,7 @@ from typing import Any, Dict, Final, List, Optional
 import argparse
 from pathlib import Path
 import sys
+from traceback import print_exc
 
 from cppbonsai import __version__ as current_version
 from cppbonsai.parser.libclang import ClangParser
@@ -128,7 +129,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         # In real code the `except` would probably be less broad.
         # Turn exceptions into appropriate logs and/or console output.
 
-        print('An unhandled exception crashed the application!', err)
+        print('An unhandled exception crashed the application!', file=sys.stderr)
+        print(err, file=sys.stderr)
+        print_exc(file=sys.stderr)
 
         # Non-zero return code to signal error.
         # It can, of course, be more fine-grained than this general code.
