@@ -21,9 +21,11 @@ Some of the structure of this file came from this StackExchange question:
 from typing import Any, Dict, Final, List, Optional
 
 import argparse
+from pathlib import Path
 import sys
 
 from cppbonsai import __version__ as current_version
+from cppbonsai.parser.libclang import ClangParser
 
 ###############################################################################
 # Constants
@@ -91,8 +93,15 @@ def load_configs(args: Dict[str, Any]) -> Dict[str, Any]:
 def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
     print(f'Arguments: {args}')
     print(f'Configurations: {configs}')
-    if args['version']:
-        print(f'Version: {current_version}')
+
+    parser = ClangParser(
+        lib_path=Path('/usr/lib/llvm-15/lib'),
+        lib_file=Path('/usr/lib/llvm-15/lib/libclang.so'),
+        includes=Path('/usr/lib/llvm-15/lib/clang/15.0.7/include'),
+    )
+    file_path = Path(args['args'][0]).resolve(strict=True)
+    print('[AST]', file_path)
+    print(parser.parse(file_path))
 
 
 ###############################################################################
