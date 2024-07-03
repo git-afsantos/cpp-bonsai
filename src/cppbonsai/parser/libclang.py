@@ -99,6 +99,7 @@ class ClangParser:
                 lines.append(cursor_str(cursor, 0))
                 indent = 0
                 stack = list(cursor.get_children())
+                stack.reverse()
                 stack.append(1)
                 while stack:
                     c = stack.pop()
@@ -107,7 +108,7 @@ class ClangParser:
                     else:
                         lines.append(cursor_str(c, indent))
                         stack.append(-1)
-                        stack.extend(c.get_children())
+                        stack.extend(reversed(list(c.get_children())))
                         stack.append(1)
         return '\n'.join(lines)
 

@@ -99,9 +99,11 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
         lib_file=Path('/usr/lib/llvm-15/lib/libclang.so'),
         includes=Path('/usr/lib/llvm-15/lib/clang/15.0.7/include'),
     )
-    file_path = Path(args['args'][0]).resolve(strict=True)
-    print('[AST]', file_path)
-    print(parser.parse(file_path))
+
+    for arg in args['args']:
+        file_path = Path(arg).resolve(strict=True)
+        print('[AST]', file_path)
+        print(parser.parse(file_path))
 
 
 ###############################################################################
