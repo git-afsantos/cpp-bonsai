@@ -42,54 +42,44 @@ class ClangParser:
 
     def parse(self, file_path: Path):
         if self.database is None:
-            return self._parse_without_db(file_path)
-        return self._parse_from_db(file_path)
+            unit: clang.TranslationUnit = self._parse_without_db(file_path)
+        else:
+            unit = self._parse_from_db(file_path)
+        check_compilation_problems(unit)
+        return ast_str(unit.cursor, workspace=self.workspace)
 
-    def _parse_from_db(self, file_path: Path, just_ast: bool = True):
-        # ----- command retrieval ---------------------------------------------
-        cmd: Iterable[clang.CompileCommand] = self.database.getCompileCommands(file_path) or ()
-        if not cmd:
-            return None
-        for c in cmd:
-            with working_directory(self.db_path / c.directory):
-                args = ['-I' + self.includes] + list(c.arguments)[1:]
+    def _parse_from_db(self, file_path: Path) -> clang.TranslationUnit:
+        key = str(file_path)
+        commands: Iterable[clang.CompileCommand] = self.database.getCompileCommands(key)
+        if not commands:
+            logger.error(f'no compile commands for "{key}"')
+            raise KeyError(key)
+        for cmd in commands:
+            if not cmd.arguments:
+                continue
+            with working_directory(self.db_path / cmd.directory):
+                args = ['-I' + self.includes]
+                args.extend(list(cmd.arguments)[1:])
                 if self._index is None:
                     self._index = clang.Index.create()
-
-                # ----- parsing and AST analysis ------------------------------
-                unit: clang.TranslationUnit = self._index.parse(None, args=args)
-                check_compilation_problems(unit)
-                if just_ast:
-                    return ast_str(unit.cursor, workspace=self.workspace)
+                return self._index.parse(None, args=args)
                 #self._ast_analysis(unit.cursor)
-
         #self.global_scope._afterpass()
         #return self.global_scope
-        return ast_str(unit.cursor, workspace=self.workspace)
+        logger.error(f'no arguments given for any compile command')
+        raise RuntimeError(f'no arguments given for any compile command')
 
-    def _parse_without_db(self, file_path: Path, just_ast: bool = True):
-        # ----- command retrieval ---------------------------------------------
+    def _parse_without_db(self, file_path: Path) -> clang.TranslationUnit:
         with working_directory(file_path.parent):
             args = [f'-I{self.includes}']
-
             for include_dir in self.user_includes:
                 args.append(f'-I{include_dir}')
-
-            # args.append(str(file_path))
-
             if self._index is None:
                 self._index = clang.Index.create()
-
-            # ----- parsing and AST analysis ----------------------------------
-            unit: clang.TranslationUnit = self._index.parse(str(file_path), args)
-            check_compilation_problems(unit)
-            if just_ast:
-                return ast_str(unit.cursor, workspace=self.workspace)
+            return self._index.parse(str(file_path), args=args)
             #self._ast_analysis(unit.cursor)
-
         #self.global_scope._afterpass()
         #return self.global_scope
-        return ast_str(unit.cursor, workspace=self.workspace)
 
 
 ###############################################################################
