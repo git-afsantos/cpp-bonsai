@@ -5,7 +5,7 @@
 # Imports
 ###############################################################################
 
-from typing import Final, Iterable, List, Optional, Tuple
+from typing import Any, Final, Iterable, List, Mapping, Optional, Tuple
 
 from contextlib import contextmanager
 from ctypes import ArgumentError
@@ -16,6 +16,8 @@ from pathlib import Path
 from attrs import define, field
 import clang.cindex as clang
 
+from cppbonsai.ast.common import AST, NULL_ID, ASTNodeId, ASTNodeType, SourceLocation
+
 ###############################################################################
 # Constants
 ###############################################################################
@@ -23,6 +25,20 @@ import clang.cindex as clang
 CK = clang.CursorKind
 
 logger: Final[logging.Logger] = logging.getLogger(__name__)
+
+###############################################################################
+# Builders
+###############################################################################
+
+
+@define
+class EntityBuilder:
+    id: ASTNodeId
+    parent: ASTNodeId = field(eq=False)
+    cursor: clang.Cursor = field(eq=False)
+    children: Iterable[ASTNodeId] = field(factory=tuple, eq=False)
+    location: SourceLocation = field(factory=SourceLocation, eq=False)
+
 
 ###############################################################################
 # Parser
@@ -37,16 +53,17 @@ class ClangParser:
     user_includes: Iterable[Path] = field(factory=list)
     database: Optional[clang.CompilationDatabase] = None
     db_path: Optional[Path] = None
-    _index: Optional[clang.Index] = None
     workspace: Optional[Path] = None
+    _index: Optional[clang.Index] = None
+    _stack: List[EntityBuilder] = field(factory=list)
 
-    def parse(self, file_path: Path):
+    def parse(self, file_path: Path, verbose: bool = False):
         if self.database is None:
             unit: clang.TranslationUnit = self._parse_without_db(file_path)
         else:
             unit = self._parse_from_db(file_path)
         check_compilation_problems(unit)
-        return ast_str(unit.cursor, workspace=self.workspace)
+        return ast_str(unit.cursor, workspace=self.workspace, verbose=verbose)
 
     def _parse_from_db(self, file_path: Path) -> clang.TranslationUnit:
         key = str(file_path)
@@ -81,6 +98,35 @@ class ClangParser:
         #self.global_scope._afterpass()
         #return self.global_scope
 
+    def _build_ast(self, unit: clang.TranslationUnit) -> AST:
+        assert unit.cursor.kind == CK.TRANSLATION_UNIT
+        ast = AST()
+
+        stack: List[Tuple[ASTNodeId, clang.Cursor]] = []
+        for cursor in unit.cursor.get_children():
+            loc_file: Optional[clang.File] = cursor.location.file
+            if loc_file is None:
+                continue
+            file_path: Path = Path(loc_file.name)
+            if self.workspace and (self.workspace not in file_path.parents):
+                continue
+            # if not loc_file.name.startswith(str(self.workspace)):
+            #     continue
+            stack.append((NULL_ID, cursor))
+
+        next_id: int = 1
+        stack.reverse()
+        while stack:
+            parent_id, cursor = stack.pop()
+            node_id = ASTNodeId(next_id)
+            next_id += 1
+            location = location_from_cursor(cursor)
+            builder = EntityBuilder(node_id, parent_id, cursor, location=location)
+            for child in reversed(list(cursor.get_children())):
+                stack.append((node_id, child))
+
+        return ast
+
 
 ###############################################################################
 # Helpers
@@ -104,7 +150,22 @@ def check_compilation_problems(translation_unit: clang.TranslationUnit):
             logger.warning(diagnostic.spelling)
 
 
-def cursor_str(cursor: clang.Cursor, indent: int = 0) -> str:
+def location_from_cursor(cursor: clang.Cursor) -> SourceLocation:
+    name = ''
+    line = 0
+    column = 0
+    try:
+        if cursor.location.file:
+            name = cursor.location.file.name
+            line = cursor.location.line
+            column = cursor.location.column
+    except ArgumentError as e:
+        text = cursor_str(cursor)
+        logger.debug(f'unable to extract location from cursor: {text}')
+    return SourceLocation(line=line, column=column, file=name)
+
+
+def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> str:
     line = 0
     col = 0
     try:
@@ -115,12 +176,18 @@ def cursor_str(cursor: clang.Cursor, indent: int = 0) -> str:
         pass
     name = repr(cursor.kind)[11:]
     spell = cursor.spelling or '[no spelling]'
-    tokens = len(list(cursor.get_tokens()))
+    tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
     prefix = indent * '| '
-    return f'{prefix}[{line}:{col}] {name}: {spell} [{tokens} tokens]'
+    if not verbose or len(tokens) >= 5:
+        return f'{prefix}[{line}:{col}] {name}: {spell} [{len(tokens)} tokens]'
+    return f'{prefix}[{line}:{col}] {name}: {spell} [{len(tokens)} tokens] {tokens}'
 
 
-def ast_str(top_cursor: clang.Cursor, workspace: Optional[Path] = None) -> str:
+def ast_str(
+    top_cursor: clang.Cursor,
+    workspace: Optional[Path] = None,
+    verbose: bool = False,
+) -> str:
     assert top_cursor.kind == CK.TRANSLATION_UNIT
 
     stack: List[Tuple[int, clang.Cursor]] = []
@@ -139,7 +206,7 @@ def ast_str(top_cursor: clang.Cursor, workspace: Optional[Path] = None) -> str:
     lines: List[str] = []
     while stack:
         indent, cursor = stack.pop()
-        lines.append(cursor_str(cursor, indent=indent))
+        lines.append(cursor_str(cursor, indent=indent, verbose=verbose))
         for child in reversed(list(cursor.get_children())):
             stack.append((indent + 1, child))
 
