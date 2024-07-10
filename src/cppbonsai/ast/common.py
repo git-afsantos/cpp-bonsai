@@ -22,6 +22,7 @@ NULL_ID: Final[ASTNodeId] = ASTNodeId(0)
 
 class ASTNodeType(Enum):
     FILE = auto()
+    NAMESPACE = auto()
 
     # C++ Statement
     STATEMENT = auto()
@@ -164,9 +165,13 @@ class ASTNode:
     id: ASTNodeId
     type: ASTNodeType
     parent: ASTNodeId = field(default=NULL_ID, eq=False)
-    children: Iterable[ASTNodeId] = field(factory=tuple, eq=False)
+    children: Iterable[ASTNodeId] = field(factory=tuple, converter=tuple, eq=False)
     annotations: Mapping[str, Any] = field(factory=dict, eq=False)
     location: SourceLocation = field(factory=SourceLocation, eq=False)
+
+    @property
+    def is_root(self) -> bool:
+        return self.id == NULL_ID
 
 
 ###############################################################################
