@@ -30,17 +30,18 @@ reading input and so on.
 
 ASTBuilder is responsible for the main loop that builds an AST.
 It traverses the Cursor tree given by libclang and processes a series of
-entity builders from a queue.
+AST node builders from a queue.
 
-EntityBuilder is the base class for each Cursor handler.
-These builders work with Python generators.
-They yield dependencies (child cursors, turned into builders) as they find them.
-The generators are bidirectional, allowing the higer-level ASTBuilder to send
-back the constructed child AST node ID to the builder as the result of yield.
-This is done so that a given builder has access to all its children node IDs
-(assigned upon construction).
-In short, processing of a high-level Cursor is halted (via yield) until all of
-its dependencies have an ID and are queued for processing.
+ASTNodeBuilder handles the common steps to build an AST node.
+It uses CursorHandler instances as strategies to implement the behaviour
+that is specific to the cursor being handled.
+It also receives the working queue as a dependency injection, so that it can
+append new tasks originating from the current cursor.
+
+A CursorHandler processes a cursor and extracts information from it.
+It receives the 'annotations' dictionary for the current AST node, and adds
+whatever information it can from the cursor. It also produces a list of new
+CursorHandler that will each handle relevant cursor children.
 """
 
 ###############################################################################
@@ -67,27 +68,38 @@ class IdGenerator:
 
 
 @define
-class EntityBuilder:
+class CursorHandler:
     cursor: clang.Cursor
-    parent: ASTNodeId = field(default=NULL_ID)
 
-    def build(self, node_id: ASTNodeId) -> ASTNode:
+    @property
+    def node_type(self) -> ASTNodeType:
+        raise NotImplementedError()
+
+    @property
+    def location(self) -> SourceLocation:
+        return location_from_cursor(self.cursor)
+
+    def process(self, annotations: Mapping[str, Any]) -> Iterable['CursorHandler']:
         raise NotImplementedError()
 
 
-BuilderGenerator = Generator[EntityBuilder, ASTNodeId, ASTNode]
-
-
 @define
-class TranslationUnitBuilder(EntityBuilder):
+class TranslationUnitHandler(CursorHandler):
     workspace: Optional[Path] = None
 
-    def build(self, node_id: ASTNodeId) -> ASTNode:
-        assert node_id == NULL_ID
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.FILE
+
+    @property
+    def location(self) -> SourceLocation:
+        return SourceLocation(file=self.cursor.spelling)
+
+    def process(self, annotations: Mapping[str, Any]) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.TRANSLATION_UNIT
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 
-        cursors: List[clang.Cursor] = []
+        children: List[CursorHandler] = []
         for cursor in self.cursor.get_children():
             loc_file: Optional[clang.File] = cursor.location.file
             if loc_file is None:
@@ -97,102 +109,91 @@ class TranslationUnitBuilder(EntityBuilder):
                 continue
             # if not loc_file.name.startswith(str(self.workspace)):
             #     continue
-            cursors.append(cursor)
 
-        children: List[ASTNodeId] = []
-        for cursor in cursors:
             logger.debug(f'found child cursor: {cursor_str(cursor)}')
             if cursor.kind == CK.NAMESPACE:
-                child_id: ASTNodeId = yield NamespaceBuilder(cursor, parent=node_id)
-                children.append(child_id)
+                children.append(NamespaceHandler(cursor))
             else:
                 pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
 
-        return ASTNode(node_id, ASTNodeType.FILE, children=children)
+        return children
 
 
 @define
-class NamespaceBuilder(EntityBuilder):
-    def build(self, node_id: ASTNodeId) -> ASTNode:
+class NamespaceHandler(CursorHandler):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.NAMESPACE
+
+    def process(self, annotations: Mapping[str, Any]) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.NAMESPACE
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
-        children: List[ASTNodeId] = []
+
+        children: List[CursorHandler] = []
         for cursor in self.cursor.get_children():
             logger.debug(f'found child cursor: {cursor_str(cursor)}')
             if cursor.kind == CK.NAMESPACE:
-                child_id: ASTNodeId = yield NamespaceBuilder(cursor, parent=node_id)
-                children.append(child_id)
+                children.append(NamespaceHandler(cursor))
             else:
                 pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
 
-        return ASTNode(node_id, ASTNodeType.NAMESPACE, children=children)
+        return children
 
 
 @define
-class EntityBuilderTask:
+class BuilderQueue:
+    def append(self, handler: CursorHandler, parent: ASTNodeId) -> ASTNodeId:
+        raise NotImplementedError()
+
+
+@define
+class ASTNodeBuilder:
     id: ASTNodeId
-    generator: BuilderGenerator
-    ast: AST
+    parent: ASTNodeId
+    handler: CursorHandler
 
-    def send(self, node_id: ASTNodeId) -> Optional[EntityBuilder]:
-        try:
-            return self.generator.send(node_id)
-        except StopIteration as result:
-            node: ASTNode = result.value
-            logger.debug(f'insert AST node: {node}')
-            self.ast.nodes[node.id] = node
-            return None
-
-    # def __iter__(self):
-    #     node: ASTNode = yield from self.generator
-    #     logger.debug(f'insert AST node: {node}')
-    #     self.ast.nodes[node.id] = node
-
-
-# def create_task(node_id: ASTNodeId, gen: BuilderGenerator, ast: AST) -> BuilderGenerator:
-#     node: ASTNode = yield from gen
-#     logger.debug(f'insert AST node: {node}')
-#     ast.nodes[node.id] = node
+    def build(self, queue: BuilderQueue) -> ASTNode:
+        children: List[ASTNodeId] = []
+        annotations: Mapping[str, Any] = {}
+        for dependency in self.handler.process(annotations):
+            node_id = queue.append(dependency, self.id)
+            children.append(node_id)
+        return ASTNode(
+            self.id,
+            self.handler.node_type,
+            parent=self.parent,
+            children=children,
+            annotations=annotations,
+            location=self.handler.location,
+        )
 
 
 @define
-class ASTBuilder:
-    ast: AST = field(factory=AST, eq=False)
+class ASTBuilder(BuilderQueue):
     _next_id: IdGenerator = field(factory=IdGenerator, eq=False)
-    _queue: Deque[EntityBuilderTask] = field(factory=deque, eq=False)
+    _queue: Deque[ASTNodeBuilder] = field(factory=deque, eq=False)
 
     def build_from_unit(self, tu: clang.TranslationUnit, workspace: Optional[Path] = None) -> AST:
-        self._queue = deque()
         self._next_id = IdGenerator(id=NULL_ID)
-        builder = TranslationUnitBuilder(tu.cursor, workspace=workspace)
+        handler = TranslationUnitHandler(tu.cursor, workspace=workspace)
         ast = AST()
-        self._enqueue(builder, ast)
+        self.append(handler, NULL_ID)
         self._process_queue(ast)
         return ast
 
     def _process_queue(self, ast: AST):
         while self._queue:
-            task = self._queue.popleft()
-            child_id: Optional[ASTNodeId] = None
-            logger.debug(f'starting task #{task.id} (in queue: {len(self._queue)})')
-            while True:
-                dependency: Optional[EntityBuilder] = task.send(child_id)
-                if dependency is None:
-                    logger.debug(f'completed task #{task.id} (in queue: {len(self._queue)})')
-                    break
-                child_id = self._enqueue(dependency, ast)
+            builder = self._queue.popleft()
+            logger.debug(f'starting builder #{builder.id} (in queue: {len(self._queue)})')
+            node = builder.build(self)
+            logger.debug(f'finished node #{node.id} (in queue: {len(self._queue)})')
+            ast.nodes[node.id] = node
 
-    # def _builder_generator(self, builder: EntityBuilder) -> BuilderGenerator:
-    #     node_id = self._next_id.get()
-    #     generator = builder.build(node_id)
-    #     node: ASTNode = yield from generator
-    #     self.ast.nodes[node.id] = node
-
-    def _enqueue(self, builder: EntityBuilder, ast: AST) -> ASTNodeId:
+    def append(self, handler: CursorHandler, parent: ASTNodeId) -> ASTNodeId:
         node_id = self._next_id.get()
-        task = EntityBuilderTask(node_id, builder.build(node_id), ast)
-        self._queue.append(task)
-        logger.debug(f'enqueue task #{node_id} for: {cursor_str(builder.cursor)}')
+        logger.debug(f'enqueue builder #{node_id} for: {cursor_str(handler.cursor)}')
+        builder = ASTNodeBuilder(node_id, parent, handler)
+        self._queue.append(builder)
         return node_id
 
 
@@ -211,7 +212,6 @@ class ClangParser:
     db_path: Optional[Path] = None
     workspace: Optional[Path] = None
     _index: Optional[clang.Index] = None
-    _stack: List[EntityBuilder] = field(factory=list)
 
     def parse(self, file_path: Path, verbose: bool = False):
         if self.database is None:

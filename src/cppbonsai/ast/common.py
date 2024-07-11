@@ -21,6 +21,7 @@ NULL_ID: Final[ASTNodeId] = ASTNodeId(0)
 
 
 class ASTNodeType(Enum):
+    UNKNOWN = auto()
     FILE = auto()
     NAMESPACE = auto()
 
