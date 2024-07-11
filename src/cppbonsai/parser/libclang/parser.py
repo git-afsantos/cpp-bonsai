@@ -5,19 +5,20 @@
 # Imports
 ###############################################################################
 
-from typing import Any, Deque, Final, Generator, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Deque, Final, Iterable, List, Mapping, Optional
 
 from collections import deque
 from contextlib import contextmanager
-from ctypes import ArgumentError
 import logging
 import os
 from pathlib import Path
 
-from attrs import define, field, frozen
+from attrs import define, field
 import clang.cindex as clang
 
-from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeId, ASTNodeType, SourceLocation
+from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeId
+from cppbonsai.parser.libclang.cursors import CursorHandler, TranslationUnitHandler
+from cppbonsai.parser.libclang.util import cursor_str
 
 ###############################################################################
 # Notes
@@ -48,8 +49,6 @@ CursorHandler that will each handle relevant cursor children.
 # Constants
 ###############################################################################
 
-CK = clang.CursorKind
-
 logger: Final[logging.Logger] = logging.getLogger(__name__)
 
 ###############################################################################
@@ -68,82 +67,9 @@ class IdGenerator:
 
 
 @define
-class CursorHandler:
-    cursor: clang.Cursor
-
-    @property
-    def node_type(self) -> ASTNodeType:
-        raise NotImplementedError()
-
-    @property
-    def location(self) -> SourceLocation:
-        return location_from_cursor(self.cursor)
-
-    def process(self, annotations: Mapping[str, Any]) -> Iterable['CursorHandler']:
-        raise NotImplementedError()
-
-
-@define
-class TranslationUnitHandler(CursorHandler):
-    workspace: Optional[Path] = None
-
-    @property
-    def node_type(self) -> ASTNodeType:
-        return ASTNodeType.FILE
-
-    @property
-    def location(self) -> SourceLocation:
-        return SourceLocation(file=self.cursor.spelling)
-
-    def process(self, annotations: Mapping[str, Any]) -> Iterable[CursorHandler]:
-        assert self.cursor.kind == CK.TRANSLATION_UNIT
-        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
-
-        children: List[CursorHandler] = []
-        for cursor in self.cursor.get_children():
-            loc_file: Optional[clang.File] = cursor.location.file
-            if loc_file is None:
-                continue
-            file_path: Path = Path(loc_file.name)
-            if self.workspace and (self.workspace not in file_path.parents):
-                continue
-            # if not loc_file.name.startswith(str(self.workspace)):
-            #     continue
-
-            logger.debug(f'found child cursor: {cursor_str(cursor)}')
-            if cursor.kind == CK.NAMESPACE:
-                children.append(NamespaceHandler(cursor))
-            else:
-                pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
-
-        return children
-
-
-@define
-class NamespaceHandler(CursorHandler):
-    @property
-    def node_type(self) -> ASTNodeType:
-        return ASTNodeType.NAMESPACE
-
-    def process(self, annotations: Mapping[str, Any]) -> Iterable[CursorHandler]:
-        assert self.cursor.kind == CK.NAMESPACE
-        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
-
-        children: List[CursorHandler] = []
-        for cursor in self.cursor.get_children():
-            logger.debug(f'found child cursor: {cursor_str(cursor)}')
-            if cursor.kind == CK.NAMESPACE:
-                children.append(NamespaceHandler(cursor))
-            else:
-                pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
-
-        return children
-
-
-@define
 class BuilderQueue:
     def append(self, handler: CursorHandler, parent: ASTNodeId) -> ASTNodeId:
-        raise NotImplementedError()
+        raise NotImplementedError(f'BuilderQueue.append({handler!r}, {parent!r})')
 
 
 @define
@@ -261,8 +187,14 @@ class ClangParser:
 
 
 ###############################################################################
-# Helpers
+# Helper Functions
 ###############################################################################
+
+
+def check_compilation_problems(translation_unit: clang.TranslationUnit):
+    for diagnostic in (translation_unit.diagnostics or ()):
+        if diagnostic.severity >= clang.Diagnostic.Error:
+            logger.warning(diagnostic.spelling)
 
 
 @contextmanager
@@ -274,73 +206,3 @@ def working_directory(path: Path):
         yield
     finally:
         os.chdir(prev_cwd)
-
-
-def check_compilation_problems(translation_unit: clang.TranslationUnit):
-    for diagnostic in (translation_unit.diagnostics or ()):
-        if diagnostic.severity >= clang.Diagnostic.Error:
-            logger.warning(diagnostic.spelling)
-
-
-def location_from_cursor(cursor: clang.Cursor) -> SourceLocation:
-    name = ''
-    line = 0
-    column = 0
-    try:
-        if cursor.location.file:
-            name = cursor.location.file.name
-            line = cursor.location.line
-            column = cursor.location.column
-    except ArgumentError as e:
-        text = cursor_str(cursor)
-        logger.debug(f'unable to extract location from cursor: {text}')
-    return SourceLocation(line=line, column=column, file=name)
-
-
-def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> str:
-    line = 0
-    col = 0
-    try:
-        if cursor.location.file:
-            line = cursor.location.line
-            col = cursor.location.column
-    except ArgumentError as e:
-        pass
-    name = repr(cursor.kind)[11:]
-    spell = cursor.spelling or '[no spelling]'
-    tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
-    prefix = indent * '| '
-    if not verbose or len(tokens) >= 5:
-        return f'{prefix}[{line}:{col}] {name}: {spell} [{len(tokens)} tokens]'
-    usr = cursor.get_usr()
-    return f'{prefix}[{line}:{col}][{usr}] {name}: {spell} [{len(tokens)} tokens] {tokens}'
-
-
-def ast_str(
-    top_cursor: clang.Cursor,
-    workspace: Optional[Path] = None,
-    verbose: bool = False,
-) -> str:
-    assert top_cursor.kind == CK.TRANSLATION_UNIT
-
-    stack: List[Tuple[int, clang.Cursor]] = []
-    for cursor in top_cursor.get_children():
-        loc_file: Optional[clang.File] = cursor.location.file
-        if loc_file is None:
-            continue
-        file_path: Path = Path(loc_file.name)
-        if workspace and (workspace not in file_path.parents):
-            continue
-        # if not loc_file.name.startswith(str(self.workspace)):
-        #     continue
-        stack.append((0, cursor))
-
-    stack.reverse()
-    lines: List[str] = []
-    while stack:
-        indent, cursor = stack.pop()
-        lines.append(cursor_str(cursor, indent=indent, verbose=verbose))
-        for child in reversed(list(cursor.get_children())):
-            stack.append((indent + 1, child))
-
-    return '\n'.join(lines)
