@@ -75,7 +75,7 @@ class EntityBuilder:
         raise NotImplementedError()
 
 
-BuilderGenerator = Generator[EntityBuilder, ASTNode, ASTNode]
+BuilderGenerator = Generator[EntityBuilder, ASTNodeId, ASTNode]
 
 
 @define
@@ -85,6 +85,7 @@ class TranslationUnitBuilder(EntityBuilder):
     def build(self, node_id: ASTNodeId) -> ASTNode:
         assert node_id == NULL_ID
         assert self.cursor.kind == CK.TRANSLATION_UNIT
+        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 
         cursors: List[clang.Cursor] = []
         for cursor in self.cursor.get_children():
@@ -100,6 +101,7 @@ class TranslationUnitBuilder(EntityBuilder):
 
         children: List[ASTNodeId] = []
         for cursor in cursors:
+            logger.debug(f'found child cursor: {cursor_str(cursor)}')
             if cursor.kind == CK.NAMESPACE:
                 child_id: ASTNodeId = yield NamespaceBuilder(cursor, parent=node_id)
                 children.append(child_id)
@@ -113,8 +115,10 @@ class TranslationUnitBuilder(EntityBuilder):
 class NamespaceBuilder(EntityBuilder):
     def build(self, node_id: ASTNodeId) -> ASTNode:
         assert self.cursor.kind == CK.NAMESPACE
+        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
         children: List[ASTNodeId] = []
         for cursor in self.cursor.get_children():
+            logger.debug(f'found child cursor: {cursor_str(cursor)}')
             if cursor.kind == CK.NAMESPACE:
                 child_id: ASTNodeId = yield NamespaceBuilder(cursor, parent=node_id)
                 children.append(child_id)
@@ -130,12 +134,25 @@ class EntityBuilderTask:
     generator: BuilderGenerator
     ast: AST
 
-    def send(self, node_id: ASTNodeId) -> EntityBuilder:
-        return self.generator.send(node_id)
+    def send(self, node_id: ASTNodeId) -> Optional[EntityBuilder]:
+        try:
+            return self.generator.send(node_id)
+        except StopIteration as result:
+            node: ASTNode = result.value
+            logger.debug(f'insert AST node: {node}')
+            self.ast.nodes[node.id] = node
+            return None
 
-    def __iter__(self):
-        node: ASTNode = yield from self.generator
-        self.ast.nodes[node.id] = node
+    # def __iter__(self):
+    #     node: ASTNode = yield from self.generator
+    #     logger.debug(f'insert AST node: {node}')
+    #     self.ast.nodes[node.id] = node
+
+
+# def create_task(node_id: ASTNodeId, gen: BuilderGenerator, ast: AST) -> BuilderGenerator:
+#     node: ASTNode = yield from gen
+#     logger.debug(f'insert AST node: {node}')
+#     ast.nodes[node.id] = node
 
 
 @define
@@ -157,12 +174,13 @@ class ASTBuilder:
         while self._queue:
             task = self._queue.popleft()
             child_id: Optional[ASTNodeId] = None
-            try:
-                while True:
-                    dependency: EntityBuilder = task.send(child_id)
-                    child_id = self._enqueue(dependency, ast)
-            except StopIteration:
-                pass  # return value handled in the generator wrapper
+            logger.debug(f'starting task #{task.id} (in queue: {len(self._queue)})')
+            while True:
+                dependency: Optional[EntityBuilder] = task.send(child_id)
+                if dependency is None:
+                    logger.debug(f'completed task #{task.id} (in queue: {len(self._queue)})')
+                    break
+                child_id = self._enqueue(dependency, ast)
 
     # def _builder_generator(self, builder: EntityBuilder) -> BuilderGenerator:
     #     node_id = self._next_id.get()
@@ -174,6 +192,7 @@ class ASTBuilder:
         node_id = self._next_id.get()
         task = EntityBuilderTask(node_id, builder.build(node_id), ast)
         self._queue.append(task)
+        logger.debug(f'enqueue task #{node_id} for: {cursor_str(builder.cursor)}')
         return node_id
 
 
