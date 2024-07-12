@@ -5,8 +5,9 @@
 # Imports
 ###############################################################################
 
-from typing import Any, Dict, Final, Iterable, List, Mapping, NewType, Optional, Tuple
+from typing import Any, Final, Iterable, Mapping, NewType
 
+from collections import UserDict
 from enum import Enum, auto
 
 from attrs import field, frozen
@@ -27,6 +28,7 @@ class ASTNodeType(Enum):
 
     # C++ Declarations and Definitions
     CLASS_DECL = auto()
+    CLASS_DEF = auto()
 
     # C++ Statement
     STATEMENT = auto()
@@ -94,6 +96,10 @@ class ASTNodeType(Enum):
         return self == ASTNodeType.CLASS_DECL
 
     @property
+    def is_definition(self) -> bool:
+        return self == ASTNodeType.CLASS_DEF
+
+    @property
     def is_statement(self) -> bool:
         return (
             self == ASTNodeType.EXPRESSION_STMT
@@ -154,9 +160,11 @@ class ASTNodeType(Enum):
 
 
 class ASTNodeAttribute(Enum):
-    NAME = 'name'
-    ACCESS_SPECIFIER = 'access'
-    BASE_CLASSES = 'bases'
+    NAME = auto()
+    USR = auto()
+    DISPLAY_NAME = auto()
+    ACCESS_SPECIFIER = auto()
+    BASE_CLASSES = auto()
 
 
 class AccessSpecifier(Enum):
@@ -175,6 +183,18 @@ class SourceLocation:
     line: int = 0
     column: int = 0
     file: str = ''
+
+
+class AttributeMap(UserDict):
+    def __getitem__(self, key: Any):
+        if isinstance(key, ASTNodeAttribute):
+            key = key.name
+        return super().__getitem__(key)
+
+    def __setitem__(self, key: Any, value: Any):
+        if isinstance(key, ASTNodeAttribute):
+            key = key.name
+        super().__setitem__(key, value)
 
 
 ###############################################################################

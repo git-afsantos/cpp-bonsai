@@ -16,7 +16,7 @@ from pathlib import Path
 from attrs import define, field
 import clang.cindex as clang
 
-from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeId
+from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeAttribute, ASTNodeId, AttributeMap
 from cppbonsai.parser.libclang.cursors import CursorHandler, TranslationUnitHandler
 from cppbonsai.parser.libclang.util import cursor_str
 
@@ -80,7 +80,7 @@ class ASTNodeBuilder:
 
     def build(self, queue: BuilderQueue) -> ASTNode:
         children: List[ASTNodeId] = []
-        annotations: Mapping[str, Any] = {}
+        annotations: Mapping[str | ASTNodeAttribute, Any] = AttributeMap()
         for dependency in self.handler.process(annotations):
             node_id = queue.append(dependency, self.id)
             children.append(node_id)
@@ -89,7 +89,7 @@ class ASTNodeBuilder:
             self.handler.node_type,
             parent=self.parent,
             children=children,
-            annotations=annotations,
+            annotations=annotations.data,
             location=self.handler.location,
         )
 

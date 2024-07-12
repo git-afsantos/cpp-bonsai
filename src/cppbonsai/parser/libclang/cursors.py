@@ -13,7 +13,7 @@ from pathlib import Path
 from attrs import define, field
 import clang.cindex as clang
 
-from cppbonsai.ast.common import ASTNodeAttribute, ASTNodeType, AccessSpecifier, SourceLocation
+from cppbonsai.ast.common import ASTNodeAttribute, ASTNodeType, SourceLocation
 from cppbonsai.parser.libclang.util import cursor_str, location_from_cursor
 
 ###############################################################################
@@ -41,7 +41,7 @@ class CursorHandler:
     def location(self) -> SourceLocation:
         return location_from_cursor(self.cursor)
 
-    def process(self, annotations: Mapping[str, Any]) -> Iterable['CursorHandler']:
+    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable['CursorHandler']:
         raise NotImplementedError()
 
 
@@ -62,7 +62,7 @@ class TranslationUnitHandler(CursorHandler):
     def location(self) -> SourceLocation:
         return SourceLocation(file=self.cursor.spelling)
 
-    def process(self, annotations: Mapping[str, Any]) -> Iterable[CursorHandler]:
+    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.TRANSLATION_UNIT
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 
@@ -94,11 +94,11 @@ class NamespaceHandler(CursorHandler):
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.NAMESPACE
 
-    def process(self, annotations: Mapping[str, Any]) -> Iterable[CursorHandler]:
+    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.NAMESPACE
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 
-        annotations[ASTNodeAttribute.NAME.value] = self.cursor.spelling
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
 
         dependencies: List[CursorHandler] = []
         for cursor in self.cursor.get_children():
@@ -119,25 +119,28 @@ class ClassDeclarationHandler(CursorHandler):
 
     @property
     def node_type(self) -> ASTNodeType:
-        return ASTNodeType.CLASS_DECL
+        return ASTNodeType.CLASS_DEF if self.cursor.is_definition() else ASTNodeType.CLASS_DECL
 
-    def process(self, annotations: Mapping[str, Any]) -> Iterable[CursorHandler]:
+    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.CLASS_DECL
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 
-        annotations[ASTNodeAttribute.NAME.value] = self.cursor.spelling
-        # is_definition: bool = self.cursor.is_definition()
+        # extract attributes from the cursor
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
+        data[ASTNodeAttribute.USR] = self.cursor.get_usr()
+        data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
         # cursor = self.cursor.get_definition()
-        # usr: str = self.cursor.get_usr()
-        # name: str = self.cursor.displayname
 
         # process child cursors using a state machine
-        dependencies: List[CursorHandler] = []
         self._stack.extend(reversed(list(self.cursor.get_children())))
         if not self._stack:
-            return dependencies
-
+            return []
         # stage 1: process base classes
+        self._handle_base_classes(data)
+        # stage 2: process members
+        return self._handle_members()
+
+    def _handle_base_classes(self, data: Mapping[str | ASTNodeAttribute, Any]):
         bases: List[str] = []
         while self._stack:
             cursor = self._stack.pop()
@@ -148,9 +151,10 @@ class ClassDeclarationHandler(CursorHandler):
             logger.debug(f'found child cursor: {cursor_str(cursor)}')
             bases.append(cursor.spelling)
         if bases:
-            annotations[ASTNodeAttribute.BASE_CLASSES.value] = ','.join(bases)
+            data[ASTNodeAttribute.BASE_CLASSES] = ','.join(bases)
 
-        # stage 2: process members
+    def _handle_members(self) -> Iterable[CursorHandler]:
+        dependencies: List[CursorHandler] = []
         while self._stack:
             cursor = self._stack.pop()
             logger.debug(f'found child cursor: {cursor_str(cursor)}')
