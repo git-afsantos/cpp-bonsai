@@ -13,7 +13,7 @@ from pathlib import Path
 from attrs import define, field
 import clang.cindex as clang
 
-from cppbonsai.ast.common import ASTNodeAttribute, ASTNodeType, SourceLocation
+from cppbonsai.ast.common import ASTNodeAttribute, ASTNodeType, AttributeMap, SourceLocation
 from cppbonsai.parser.libclang.util import cursor_str, location_from_cursor
 
 ###############################################################################
@@ -41,7 +41,7 @@ class CursorHandler:
     def location(self) -> SourceLocation:
         return location_from_cursor(self.cursor)
 
-    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable['CursorHandler']:
+    def process(self, data: AttributeMap) -> Iterable['CursorHandler']:
         raise NotImplementedError()
 
 
@@ -62,7 +62,7 @@ class TranslationUnitHandler(CursorHandler):
     def location(self) -> SourceLocation:
         return SourceLocation(file=self.cursor.spelling)
 
-    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable[CursorHandler]:
+    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.TRANSLATION_UNIT
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 
@@ -94,7 +94,7 @@ class NamespaceHandler(CursorHandler):
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.NAMESPACE
 
-    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable[CursorHandler]:
+    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.NAMESPACE
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 
@@ -121,7 +121,7 @@ class ClassDeclarationHandler(CursorHandler):
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.CLASS_DEF if self.cursor.is_definition() else ASTNodeType.CLASS_DECL
 
-    def process(self, data: Mapping[str | ASTNodeAttribute, Any]) -> Iterable[CursorHandler]:
+    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
         assert self.cursor.kind == CK.CLASS_DECL
         logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
 

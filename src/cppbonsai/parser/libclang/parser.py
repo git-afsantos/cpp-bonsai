@@ -80,7 +80,7 @@ class ASTNodeBuilder:
 
     def build(self, queue: BuilderQueue) -> ASTNode:
         children: List[ASTNodeId] = []
-        annotations: Mapping[str | ASTNodeAttribute, Any] = AttributeMap()
+        annotations = AttributeMap()
         for dependency in self.handler.process(annotations):
             node_id = queue.append(dependency, self.id)
             children.append(node_id)

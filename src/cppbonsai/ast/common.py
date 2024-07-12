@@ -185,16 +185,18 @@ class SourceLocation:
     file: str = ''
 
 
-class AttributeMap(UserDict):
-    def __getitem__(self, key: Any):
-        if isinstance(key, ASTNodeAttribute):
-            key = key.name
-        return super().__getitem__(key)
+@frozen
+class AttributeMap:
+    data: Mapping[str, Any] = field(factory=dict)
 
-    def __setitem__(self, key: Any, value: Any):
-        if isinstance(key, ASTNodeAttribute):
-            key = key.name
-        super().__setitem__(key, value)
+    def get(self, key: ASTNodeAttribute, default: Any):
+        return self.data.get(key.name, default=default)
+
+    def __getitem__(self, key: ASTNodeAttribute):
+        return self.data[key.name]
+
+    def __setitem__(self, key: ASTNodeAttribute, value: Any):
+        self.data[key.name] = value
 
 
 ###############################################################################
