@@ -21,6 +21,15 @@ void C::m(int a) {
     x_ = a;
 }
 
+
+class D : public C
+{
+    [[noreturn]] void f() {
+        while (true) ;
+    }
+};
+
+
 int main(int argc, char ** argv) {
     C c;
     c.m(42);
