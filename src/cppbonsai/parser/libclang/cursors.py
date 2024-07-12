@@ -14,7 +14,7 @@ from attrs import define, field
 import clang.cindex as clang
 
 from cppbonsai.ast.common import ASTNodeAttribute, ASTNodeType, AttributeMap, SourceLocation
-from cppbonsai.parser.libclang.util import cursor_str, location_from_cursor
+from cppbonsai.parser.libclang.util import cursor_str, get_access_specifier, location_from_cursor
 
 ###############################################################################
 # Constants
@@ -128,7 +128,7 @@ class ClassDeclarationHandler(CursorHandler):
         # extract attributes from the cursor
         data[ASTNodeAttribute.NAME] = self.cursor.spelling
         data[ASTNodeAttribute.USR] = self.cursor.get_usr()
-        data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
+        # data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
         # cursor = self.cursor.get_definition()
 
         # process child cursors using a state machine
@@ -163,7 +163,7 @@ class ClassDeclarationHandler(CursorHandler):
             if cursor.kind == CK.CXX_METHOD:
                 pass
             elif cursor.kind == CK.FIELD_DECL:
-                pass
+                dependencies.append(FieldDeclarationHandler(cursor))
             elif cursor.kind == CK.CONSTRUCTOR:
                 pass
             elif cursor.kind == CK.CLASS_DECL:
@@ -174,6 +174,27 @@ class ClassDeclarationHandler(CursorHandler):
                 pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
 
         return dependencies
+
+
+@define
+class FieldDeclarationHandler(CursorHandler):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.FIELD_DECL
+
+    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
+        assert self.cursor.kind == CK.FIELD_DECL
+        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
+
+        # extract attributes from the cursor
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
+        data[ASTNodeAttribute.USR] = self.cursor.get_usr()
+        # data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        data[ASTNodeAttribute.ACCESS_SPECIFIER] = get_access_specifier(self.cursor).value
+        # boolean = self.cursor.is_mutable_field()
+
+        return []  # no dependencies
 
 
 ###############################################################################

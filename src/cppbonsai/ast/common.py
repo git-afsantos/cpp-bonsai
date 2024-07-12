@@ -29,6 +29,7 @@ class ASTNodeType(Enum):
     # C++ Declarations and Definitions
     CLASS_DECL = auto()
     CLASS_DEF = auto()
+    FIELD_DECL = auto()
 
     # C++ Statement
     STATEMENT = auto()
@@ -163,6 +164,7 @@ class ASTNodeAttribute(Enum):
     NAME = auto()
     USR = auto()
     DISPLAY_NAME = auto()
+    DATA_TYPE = auto()
     ACCESS_SPECIFIER = auto()
     BASE_CLASSES = auto()
 
