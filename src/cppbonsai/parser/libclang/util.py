@@ -64,15 +64,21 @@ def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> 
         pass
     prefix = indent * '| '
     items: List[str] = [f'{prefix}[{line}:{col}]']
-    if verbose:
-        usr = cursor.get_usr()
-        items.append(f'[{usr}]')
-        access = cursor.access_specifier
-        items.append(f'({access})')
     name = repr(cursor.kind)[11:]
     items.append(f'{name}:')
     spelling = cursor.spelling or '[no spelling]'
     items.append(spelling)
+    if verbose:
+        if (own_type := cursor.type):
+            if (t := own_type.get_canonical().kind) != clang.TypeKind.INVALID:
+                items.append(f'({t}: {own_type.spelling})')
+        if (result_type := cursor.result_type):
+            if (t := result_type.get_canonical().kind) != clang.TypeKind.INVALID:
+                items.append(f'(-> {t}: {result_type.spelling})')
+        if (usr := cursor.get_usr()):
+            items.append(f'[USR:{usr}]')
+        if (access := cursor.access_specifier) != clang.AccessSpecifier.INVALID:
+            items.append(f'[{access}]')
     tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
     items.append(f'[{len(tokens)} tokens]')
     if verbose and len(tokens) < 5:
