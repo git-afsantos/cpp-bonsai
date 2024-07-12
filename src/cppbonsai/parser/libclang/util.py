@@ -13,7 +13,7 @@ from pathlib import Path
 
 import clang.cindex as clang
 
-from cppbonsai.ast.common import SourceLocation
+from cppbonsai.ast.common import AccessSpecifier, SourceLocation
 
 ###############################################################################
 # Constants
@@ -38,9 +38,19 @@ def location_from_cursor(cursor: clang.Cursor) -> SourceLocation:
             line = cursor.location.line
             column = cursor.location.column
     except ArgumentError as e:
-        text = cursor_str(cursor)
-        logger.debug(f'unable to extract location from cursor: {text}')
+        logger.debug(f'unable to extract location from cursor: {cursor_str(cursor, verbose=True)}')
     return SourceLocation(line=line, column=column, file=name)
+
+
+def get_access_specifier(cursor: clang.Cursor) -> AccessSpecifier:
+    access: clang.AccessSpecifier = cursor.access_specifier
+    if access == clang.AccessSpecifier.PUBLIC:
+        return AccessSpecifier.PUBLIC
+    if access == clang.AccessSpecifier.PRIVATE:
+        return AccessSpecifier.PRIVATE
+    if access == clang.AccessSpecifier.PROTECTED:
+        return AccessSpecifier.PROTECTED
+    raise ValueError(f'invalid access specifier: {cursor_str(cursor, verbose=True)}')
 
 
 def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> str:
@@ -52,16 +62,22 @@ def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> 
             col = cursor.location.column
     except ArgumentError as e:
         pass
-    name = repr(cursor.kind)[11:]
-    spell = cursor.spelling or '[no spelling]'
-    tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
     prefix = indent * '| '
-    if not verbose:
-        return f'{prefix}[{line}:{col}] {name}: {spell} [{len(tokens)} tokens]'
-    usr = cursor.get_usr()
-    if len(tokens) >= 5:
-        return f'{prefix}[{line}:{col}][{usr}] {name}: {spell} [{len(tokens)} tokens]'
-    return f'{prefix}[{line}:{col}][{usr}] {name}: {spell} [{len(tokens)} tokens] {tokens}'
+    items: List[str] = [f'{prefix}[{line}:{col}]']
+    if verbose:
+        usr = cursor.get_usr()
+        items.append(f'[{usr}]')
+        access = cursor.access_specifier
+        items.append(f'({access})')
+    name = repr(cursor.kind)[11:]
+    items.append(f'{name}:')
+    spelling = cursor.spelling or '[no spelling]'
+    items.append(spelling)
+    tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
+    items.append(f'[{len(tokens)} tokens]')
+    if verbose and len(tokens) < 5:
+        items.append(f'{tokens}')
+    return ' '.join(items)
 
 
 def ast_str(

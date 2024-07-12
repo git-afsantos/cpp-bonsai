@@ -25,6 +25,9 @@ class ASTNodeType(Enum):
     FILE = auto()
     NAMESPACE = auto()
 
+    # C++ Declarations and Definitions
+    CLASS_DECL = auto()
+
     # C++ Statement
     STATEMENT = auto()
     EXPRESSION_STMT = auto()
@@ -46,7 +49,6 @@ class ASTNodeType(Enum):
     MATCH_STMT = auto()
     WITH_STMT = auto()
     FUNCTION_DEF = auto()
-    CLASS_DEF = auto()
 
     # C++ Expression
     EXPRESSION = auto()
@@ -84,6 +86,14 @@ class ASTNodeType(Enum):
         return self == ASTNodeType.FILE
 
     @property
+    def is_namespace(self) -> bool:
+        return self == ASTNodeType.NAMESPACE
+
+    @property
+    def is_declaration(self) -> bool:
+        return self == ASTNodeType.CLASS_DECL
+
+    @property
     def is_statement(self) -> bool:
         return (
             self == ASTNodeType.EXPRESSION_STMT
@@ -105,7 +115,6 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.MATCH_STMT
             or self == ASTNodeType.WITH_STMT
             or self == ASTNodeType.FUNCTION_DEF
-            or self == ASTNodeType.CLASS_DEF
         )
 
     @property
@@ -142,6 +151,18 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.CASE_STATEMENT
             or self == ASTNodeType.CASE_PATTERN
         )
+
+
+class ASTNodeAttribute(Enum):
+    NAME = 'name'
+    ACCESS_SPECIFIER = 'access'
+    BASE_CLASSES = 'bases'
+
+
+class AccessSpecifier(Enum):
+    PUBLIC = 'public'
+    PRIVATE = 'private'
+    PROTECTED = 'protected'
 
 
 ###############################################################################
@@ -192,7 +213,7 @@ class AST:
     # def root(self) -> CppGlobalQueryContext:
     #     return CppGlobalQueryContext(self.nodes)
 
-    def traverse(self, start: ASTNodeId) -> None:
+    def traverse(self, start: ASTNodeId) -> Iterable[ASTNode]:
         node: ASTNode = self.nodes[start]
         yield node
         stack = list(reversed(node.children))
