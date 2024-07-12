@@ -56,9 +56,11 @@ def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> 
     spell = cursor.spelling or '[no spelling]'
     tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
     prefix = indent * '| '
-    if not verbose or len(tokens) >= 5:
+    if not verbose:
         return f'{prefix}[{line}:{col}] {name}: {spell} [{len(tokens)} tokens]'
     usr = cursor.get_usr()
+    if len(tokens) >= 5:
+        return f'{prefix}[{line}:{col}][{usr}] {name}: {spell} [{len(tokens)} tokens]'
     return f'{prefix}[{line}:{col}][{usr}] {name}: {spell} [{len(tokens)} tokens] {tokens}'
 
 
