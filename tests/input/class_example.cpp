@@ -22,12 +22,15 @@ void C::m(int a) {
 }
 
 
-class D : public C
-{
-    [[noreturn]] void f() {
-        while (true) ;
-    }
-};
+namespace N {
+    class D: public C {
+        [[noreturn]] void f(int a);
+    };
+}
+
+void N::D::f(int a) {
+    while (true) ;
+}
 
 
 int main(int argc, char ** argv) {
