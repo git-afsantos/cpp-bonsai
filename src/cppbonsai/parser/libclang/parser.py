@@ -5,7 +5,7 @@
 # Imports
 ###############################################################################
 
-from typing import Any, Deque, Final, Iterable, List, Mapping, Optional
+from typing import Deque, Final, Iterable, List, Optional
 
 from collections import deque
 from contextlib import contextmanager
@@ -16,7 +16,7 @@ from pathlib import Path
 from attrs import define, field
 import clang.cindex as clang
 
-from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeAttribute, ASTNodeId, AttributeMap
+from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeId, AttributeMap
 from cppbonsai.parser.libclang.cursors import CursorHandler, TranslationUnitHandler
 from cppbonsai.parser.libclang.util import cursor_str
 
@@ -81,6 +81,7 @@ class ASTNodeBuilder:
     def build(self, queue: BuilderQueue) -> ASTNode:
         children: List[ASTNodeId] = []
         annotations = AttributeMap()
+        logger.debug(f'processing cursor: {cursor_str(self.handler.cursor, verbose=True)}')
         for dependency in self.handler.process(annotations):
             node_id = queue.append(dependency, self.id)
             children.append(node_id)
@@ -102,7 +103,7 @@ class ASTBuilder(BuilderQueue):
     def build_from_unit(self, tu: clang.TranslationUnit, workspace: Optional[Path] = None) -> AST:
         self._next_id = IdGenerator(id=NULL_ID)
         handler = TranslationUnitHandler(tu.cursor, workspace=workspace)
-        ast = AST()
+        ast = AST(name=tu.spelling)
         self.append(handler, NULL_ID)
         self._process_queue(ast)
         return ast
