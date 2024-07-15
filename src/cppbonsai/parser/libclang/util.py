@@ -68,6 +68,9 @@ def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> 
     items.append(f'{name}:')
     spelling = cursor.spelling or '[no spelling]'
     items.append(spelling)
+    display = cursor.displayname
+    if display:
+        items.append(f"'{display}'")
     if verbose:
         if (own_type := cursor.type):
             if (t := own_type.get_canonical().kind) != clang.TypeKind.INVALID:
@@ -81,7 +84,7 @@ def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> 
             items.append(f'[{access}]')
     tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
     items.append(f'[{len(tokens)} tokens]')
-    if verbose and len(tokens) < 5:
+    if verbose and (len(tokens) < 5 or name.endswith('LITERAL')):
         items.append(f'{tokens}')
     return ' '.join(items)
 
