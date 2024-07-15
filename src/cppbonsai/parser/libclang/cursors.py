@@ -20,6 +20,7 @@ from cppbonsai.parser.libclang.util import cursor_str, get_access_specifier, loc
 # Constants
 ###############################################################################
 
+TK = clang.TokenKind
 CK = clang.CursorKind
 
 logger: Final[logging.Logger] = logging.getLogger(__name__)
@@ -31,7 +32,12 @@ logger: Final[logging.Logger] = logging.getLogger(__name__)
 
 @define
 class CursorHandler:
-    cursor: clang.Cursor
+    cursor: clang.Cursor = field()
+
+    @cursor.validator
+    def check_valid_cursor(self, _attr, cursor: clang.Cursor):
+        if not self._is_valid_cursor(cursor):
+            raise ValueError(f'invalid cursor type: {cursor_str(cursor, verbose=True)}')
 
     @property
     def node_type(self) -> ASTNodeType:
@@ -42,6 +48,22 @@ class CursorHandler:
         return location_from_cursor(self.cursor)
 
     def process(self, data: AttributeMap) -> Iterable['CursorHandler']:
+        raise NotImplementedError()
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        raise NotImplementedError()
+
+
+@define
+class ScopedCursorHandler(CursorHandler):
+    belongs_to: str = field(default='', eq=False)
+
+    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
+        if self.belongs_to:
+            data[ASTNodeAttribute.BELONGS_TO] = self.belongs_to
+        return self._process(data)
+
+    def _process(self, data: AttributeMap) -> Iterable[CursorHandler]:
         raise NotImplementedError()
 
 
@@ -62,10 +84,10 @@ class TranslationUnitHandler(CursorHandler):
     def location(self) -> SourceLocation:
         return SourceLocation(file=self.cursor.spelling)
 
-    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
-        assert self.cursor.kind == CK.TRANSLATION_UNIT
-        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.TRANSLATION_UNIT
 
+    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
         dependencies: List[CursorHandler] = []
         for cursor in self.cursor.get_children():
             loc_file: Optional[clang.File] = cursor.location.file
@@ -82,6 +104,8 @@ class TranslationUnitHandler(CursorHandler):
                 dependencies.append(NamespaceHandler(cursor))
             elif cursor.kind == CK.CLASS_DECL:
                 dependencies.append(ClassDeclarationHandler(cursor))
+            elif cursor.kind == CK.FUNCTION_DECL:
+                dependencies.append(FunctionDeclarationHandler(cursor))
             else:
                 pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
 
@@ -89,45 +113,55 @@ class TranslationUnitHandler(CursorHandler):
 
 
 @define
-class NamespaceHandler(CursorHandler):
+class NamespaceHandler(ScopedCursorHandler):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.NAMESPACE
 
-    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
-        assert self.cursor.kind == CK.NAMESPACE
-        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.NAMESPACE
 
+    def _process(self, data: AttributeMap) -> Iterable[CursorHandler]:
+        usr: str = self.cursor.get_usr()
+        data[ASTNodeAttribute.USR] = usr
         data[ASTNodeAttribute.NAME] = self.cursor.spelling
 
         dependencies: List[CursorHandler] = []
         for cursor in self.cursor.get_children():
             logger.debug(f'found child cursor: {cursor_str(cursor)}')
             if cursor.kind == CK.NAMESPACE:
-                dependencies.append(NamespaceHandler(cursor))
+                dependencies.append(NamespaceHandler(cursor, belongs_to=usr))
             elif cursor.kind == CK.CLASS_DECL:
-                dependencies.append(ClassDeclarationHandler(cursor))
+                dependencies.append(ClassDeclarationHandler(cursor, belongs_to=usr))
+            elif cursor.kind == CK.FUNCTION_DECL:
+                dependencies.append(FunctionDeclarationHandler(cursor, belongs_to=usr))
             else:
                 pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
 
         return dependencies
 
 
+###############################################################################
+# Classes and Fields
+###############################################################################
+
+
 @define
-class ClassDeclarationHandler(CursorHandler):
+class ClassDeclarationHandler(ScopedCursorHandler):
     _stack: List[clang.Cursor] = field(factory=list, eq=False)
 
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.CLASS_DEF if self.cursor.is_definition() else ASTNodeType.CLASS_DECL
 
-    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
-        assert self.cursor.kind == CK.CLASS_DECL
-        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.CLASS_DECL
 
+    def _process(self, data: AttributeMap) -> Iterable[CursorHandler]:
         # extract attributes from the cursor
+        usr: str = self.cursor.get_usr()
+        data[ASTNodeAttribute.USR] = usr
         data[ASTNodeAttribute.NAME] = self.cursor.spelling
-        data[ASTNodeAttribute.USR] = self.cursor.get_usr()
         # data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
         # cursor = self.cursor.get_definition()
 
@@ -138,9 +172,9 @@ class ClassDeclarationHandler(CursorHandler):
         # stage 1: process base classes
         self._handle_base_classes(data)
         # stage 2: process members
-        return self._handle_members()
+        return self._handle_members(usr)
 
-    def _handle_base_classes(self, data: Mapping[str | ASTNodeAttribute, Any]):
+    def _handle_base_classes(self, data: AttributeMap):
         bases: List[str] = []
         while self._stack:
             cursor = self._stack.pop()
@@ -153,7 +187,7 @@ class ClassDeclarationHandler(CursorHandler):
         if bases:
             data[ASTNodeAttribute.BASE_CLASSES] = ','.join(bases)
 
-    def _handle_members(self) -> Iterable[CursorHandler]:
+    def _handle_members(self, usr: str) -> Iterable[CursorHandler]:
         dependencies: List[CursorHandler] = []
         while self._stack:
             cursor = self._stack.pop()
@@ -161,13 +195,13 @@ class ClassDeclarationHandler(CursorHandler):
 
             # more or less ordered by likelihood
             if cursor.kind == CK.CXX_METHOD:
-                pass
+                dependencies.append(MethodDeclarationHandler(cursor, belongs_to=usr))
             elif cursor.kind == CK.FIELD_DECL:
-                dependencies.append(FieldDeclarationHandler(cursor))
+                dependencies.append(FieldDeclarationHandler(cursor, belongs_to=usr))
             elif cursor.kind == CK.CONSTRUCTOR:
                 pass
             elif cursor.kind == CK.CLASS_DECL:
-                dependencies.append(ClassDeclarationHandler(cursor))
+                dependencies.append(ClassDeclarationHandler(cursor, belongs_to=usr))
             elif cursor.kind == CK.CXX_ACCESS_SPEC_DECL:
                 pass  # handled via cursor properties
             else:
@@ -177,23 +211,22 @@ class ClassDeclarationHandler(CursorHandler):
 
 
 @define
-class FieldDeclarationHandler(CursorHandler):
+class FieldDeclarationHandler(ScopedCursorHandler):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.FIELD_DECL
 
-    def process(self, data: AttributeMap) -> Iterable[CursorHandler]:
-        assert self.cursor.kind == CK.FIELD_DECL
-        logger.debug(f'processing cursor: {cursor_str(self.cursor)}')
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.FIELD_DECL
 
+    def _process(self, data: AttributeMap) -> Iterable[CursorHandler]:
         # extract attributes from the cursor
-        data[ASTNodeAttribute.NAME] = self.cursor.spelling
         data[ASTNodeAttribute.USR] = self.cursor.get_usr()
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
         # data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
         data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
         data[ASTNodeAttribute.ACCESS_SPECIFIER] = get_access_specifier(self.cursor).value
         # boolean = self.cursor.is_mutable_field()
-
         return []  # no dependencies
 
 
@@ -201,3 +234,102 @@ class FieldDeclarationHandler(CursorHandler):
 # Functions, Methods, Constructors, Etc
 ###############################################################################
 
+
+@define
+class FunctionDeclarationHandler(ScopedCursorHandler):
+    _stack: List[clang.Cursor] = field(factory=list, eq=False)
+
+    @property
+    def node_type(self) -> ASTNodeType:
+        if self.cursor.is_definition():
+            return ASTNodeType.FUNCTION_DEF
+        else:
+            return ASTNodeType.FUNCTION_DECL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.FUNCTION_DECL
+
+    def _process(self, data: AttributeMap) -> Iterable[CursorHandler]:
+        self._extract_attributes(data)
+        # process child cursors using a state machine
+        self._stack.extend(reversed(list(self.cursor.get_children())))
+        if not self._stack:
+            return []
+        self._handle_cpp_attributes(data)
+        self._handle_namespaces(data)
+        return self._handle_params_and_body()
+
+    def _extract_attributes(self, data: AttributeMap):
+        # extract attributes from the cursor
+        data[ASTNodeAttribute.USR] = self.cursor.get_usr()
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
+        data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
+        data[ASTNodeAttribute.RETURN_TYPE] = self.cursor.result_type.spelling
+        # cursor = self.cursor.get_definition()
+
+    def _handle_cpp_attributes(self, data: AttributeMap):
+        tags: List[str] = []
+        while self._stack:
+            cursor = self._stack.pop()
+            if cursor.kind != CK.UNEXPOSED_ATTR:
+                # return non-namespace cursor to the stack
+                self._stack.append(cursor)
+                break
+            logger.debug(f'found child cursor: {cursor_str(cursor)}')
+            for token in cursor.get_tokens():
+                if token.kind == TK.IDENTIFIER:
+                    tags.append(token.spelling)
+                    break
+        if tags:
+            data[ASTNodeAttribute.ATTRIBUTES] = ','.join(tags)
+
+    def _handle_namespaces(self, data: AttributeMap):
+        parts: List[str] = []
+        while self._stack:
+            cursor = self._stack.pop()
+            if cursor.kind == CK.NAMESPACE_REF:
+                logger.debug(f'found child cursor: {cursor_str(cursor)}')
+                parts.append(f'@N@{cursor.spelling}')
+            elif cursor.kind == CK.TYPE_REF:
+                logger.debug(f'found child cursor: {cursor_str(cursor)}')
+                for token in cursor.get_tokens():
+                    if token.kind == TK.IDENTIFIER:
+                        parts.append(f'@S@{token.spelling}')
+                        break
+            else:
+                # return non-namespace cursor to the stack
+                self._stack.append(cursor)
+                break
+        if parts:
+            usr = ''.join(parts)
+            usr = f'c:{usr}'
+            data[ASTNodeAttribute.BELONGS_TO] = usr
+
+    def _handle_params_and_body(self) -> Iterable[CursorHandler]:
+        dependencies: List[CursorHandler] = []
+        while self._stack:
+            cursor = self._stack.pop()
+            logger.debug(f'found child cursor: {cursor_str(cursor)}')
+
+            # more or less ordered by likelihood
+            if cursor.kind == CK.PARM_DECL:
+                pass
+            elif cursor.kind == CK.COMPOUND_STMT:
+                pass
+            else:
+                pass #raise TypeError(f'unexpected cursor kind: {cursor_str(cursor)}')
+
+        return dependencies
+
+
+@define
+class MethodDeclarationHandler(FunctionDeclarationHandler):
+    @property
+    def node_type(self) -> ASTNodeType:
+        if self.cursor.is_definition():
+            return ASTNodeType.METHOD_DEF
+        else:
+            return ASTNodeType.METHOD_DECL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.CXX_METHOD
