@@ -17,7 +17,7 @@ from attrs import define, field
 import clang.cindex as clang
 
 from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeId, AttributeMap
-from cppbonsai.parser.libclang.cursors import CursorHandler, TranslationUnitHandler
+from cppbonsai.parser.libclang.cursors import CursorDataExtractor, TranslationUnitExtractor
 from cppbonsai.parser.libclang.util import cursor_str
 
 ###############################################################################
@@ -34,15 +34,15 @@ It traverses the Cursor tree given by libclang and processes a series of
 AST node builders from a queue.
 
 ASTNodeBuilder handles the common steps to build an AST node.
-It uses CursorHandler instances as strategies to implement the behaviour
+It uses CursorDataExtractor instances as strategies to implement the behaviour
 that is specific to the cursor being handled.
 It also receives the working queue as a dependency injection, so that it can
 append new tasks originating from the current cursor.
 
-A CursorHandler processes a cursor and extracts information from it.
+A CursorDataExtractor processes a cursor and extracts information from it.
 It receives the 'annotations' dictionary for the current AST node, and adds
 whatever information it can from the cursor. It also produces a list of new
-CursorHandler that will each handle relevant cursor children.
+CursorDataExtractor that will each handle relevant cursor children.
 """
 
 ###############################################################################
@@ -68,30 +68,30 @@ class IdGenerator:
 
 @define
 class BuilderQueue:
-    def append(self, handler: CursorHandler, parent: ASTNodeId) -> ASTNodeId:
-        raise NotImplementedError(f'BuilderQueue.append({handler!r}, {parent!r})')
+    def append(self, extractor: CursorDataExtractor, parent: ASTNodeId) -> ASTNodeId:
+        raise NotImplementedError(f'BuilderQueue.append({extractor!r}, {parent!r})')
 
 
 @define
 class ASTNodeBuilder:
     id: ASTNodeId
     parent: ASTNodeId
-    handler: CursorHandler
+    extractor: CursorDataExtractor
 
     def build(self, queue: BuilderQueue) -> ASTNode:
         children: List[ASTNodeId] = []
         annotations = AttributeMap()
-        logger.debug(f'processing cursor: {cursor_str(self.handler.cursor, verbose=True)}')
-        for dependency in self.handler.process(annotations):
+        logger.debug(f'processing cursor: {cursor_str(self.extractor.cursor, verbose=True)}')
+        for dependency in self.extractor.process(annotations):
             node_id = queue.append(dependency, self.id)
             children.append(node_id)
         return ASTNode(
             self.id,
-            self.handler.node_type,
+            self.extractor.node_type,
             parent=self.parent,
             children=children,
             annotations=annotations.data,
-            location=self.handler.location,
+            location=self.extractor.location,
         )
 
 
@@ -102,9 +102,9 @@ class ASTBuilder(BuilderQueue):
 
     def build_from_unit(self, tu: clang.TranslationUnit, workspace: Optional[Path] = None) -> AST:
         self._next_id = IdGenerator(id=NULL_ID)
-        handler = TranslationUnitHandler(tu.cursor, workspace=workspace)
+        extractor = TranslationUnitExtractor(tu.cursor, workspace=workspace)
         ast = AST(name=tu.spelling)
-        self.append(handler, NULL_ID)
+        self.append(extractor, NULL_ID)
         self._process_queue(ast)
         return ast
 
@@ -116,10 +116,10 @@ class ASTBuilder(BuilderQueue):
             logger.debug(f'finished node #{node.id} (in queue: {len(self._queue)})')
             ast.nodes[node.id] = node
 
-    def append(self, handler: CursorHandler, parent: ASTNodeId) -> ASTNodeId:
+    def append(self, extractor: CursorDataExtractor, parent: ASTNodeId) -> ASTNodeId:
         node_id = self._next_id.get()
-        logger.debug(f'enqueue builder #{node_id} for: {cursor_str(handler.cursor)}')
-        builder = ASTNodeBuilder(node_id, parent, handler)
+        logger.debug(f'enqueue builder #{node_id} for: {cursor_str(extractor.cursor)}')
+        builder = ASTNodeBuilder(node_id, parent, extractor)
         self._queue.append(builder)
         return node_id
 
