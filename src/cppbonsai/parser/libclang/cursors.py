@@ -104,6 +104,10 @@ class TranslationUnitHandler(CursorHandler):
                 dependencies.append(NamespaceHandler(cursor))
             elif cursor.kind == CK.CLASS_DECL:
                 dependencies.append(ClassDeclarationHandler(cursor))
+            elif cursor.kind == CK.STRUCT_DECL:
+                pass  # dependencies.append(ClassDeclarationHandler(cursor, belongs_to=usr))
+            elif cursor.kind == CK.UNION_DECL:
+                pass
             elif cursor.kind == CK.FUNCTION_DECL:
                 dependencies.append(FunctionDeclarationHandler(cursor))
             else:
@@ -133,6 +137,10 @@ class NamespaceHandler(ScopedCursorHandler):
                 dependencies.append(NamespaceHandler(cursor, belongs_to=usr))
             elif cursor.kind == CK.CLASS_DECL:
                 dependencies.append(ClassDeclarationHandler(cursor, belongs_to=usr))
+            elif cursor.kind == CK.STRUCT_DECL:
+                pass  # dependencies.append(ClassDeclarationHandler(cursor, belongs_to=usr))
+            elif cursor.kind == CK.UNION_DECL:
+                pass
             elif cursor.kind == CK.FUNCTION_DECL:
                 dependencies.append(FunctionDeclarationHandler(cursor, belongs_to=usr))
             else:
@@ -168,7 +176,7 @@ class ClassDeclarationHandler(ScopedCursorHandler):
         # process child cursors using a state machine
         self._stack.extend(reversed(list(self.cursor.get_children())))
         if not self._stack:
-            return []
+            return ()
         # stage 1: process base classes
         self._handle_base_classes(data)
         # stage 2: process members
@@ -200,8 +208,14 @@ class ClassDeclarationHandler(ScopedCursorHandler):
                 dependencies.append(FieldDeclarationHandler(cursor, belongs_to=usr))
             elif cursor.kind == CK.CONSTRUCTOR:
                 pass
+            elif cursor.kind == CK.DESTRUCTOR:
+                pass
             elif cursor.kind == CK.CLASS_DECL:
                 dependencies.append(ClassDeclarationHandler(cursor, belongs_to=usr))
+            elif cursor.kind == CK.STRUCT_DECL:
+                pass  # dependencies.append(ClassDeclarationHandler(cursor, belongs_to=usr))
+            elif cursor.kind == CK.UNION_DECL:
+                pass
             elif cursor.kind == CK.CXX_ACCESS_SPEC_DECL:
                 pass  # handled via cursor properties
             else:
@@ -227,7 +241,7 @@ class FieldDeclarationHandler(ScopedCursorHandler):
         data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
         data[ASTNodeAttribute.ACCESS_SPECIFIER] = get_access_specifier(self.cursor).value
         # boolean = self.cursor.is_mutable_field()
-        return []  # no dependencies
+        return ()  # no dependencies
 
 
 ###############################################################################
@@ -250,22 +264,24 @@ class FunctionDeclarationHandler(ScopedCursorHandler):
         return cursor.kind == CK.FUNCTION_DECL
 
     def _process(self, data: AttributeMap) -> Iterable[CursorHandler]:
-        self._extract_attributes(data)
+        usr: str = self._extract_attributes(data)
         # process child cursors using a state machine
         self._stack.extend(reversed(list(self.cursor.get_children())))
         if not self._stack:
-            return []
+            return ()
         self._handle_cpp_attributes(data)
         self._handle_namespaces(data)
-        return self._handle_params_and_body()
+        return self._handle_params_and_body(usr)
 
-    def _extract_attributes(self, data: AttributeMap):
+    def _extract_attributes(self, data: AttributeMap) -> str:
         # extract attributes from the cursor
-        data[ASTNodeAttribute.USR] = self.cursor.get_usr()
+        usr: str = self.cursor.get_usr()
+        data[ASTNodeAttribute.USR] = usr
         data[ASTNodeAttribute.NAME] = self.cursor.spelling
         data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
         data[ASTNodeAttribute.RETURN_TYPE] = self.cursor.result_type.spelling
         # cursor = self.cursor.get_definition()
+        return usr
 
     def _handle_cpp_attributes(self, data: AttributeMap):
         tags: List[str] = []
@@ -305,7 +321,7 @@ class FunctionDeclarationHandler(ScopedCursorHandler):
             usr = f'c:{usr}'
             data[ASTNodeAttribute.BELONGS_TO] = usr
 
-    def _handle_params_and_body(self) -> Iterable[CursorHandler]:
+    def _handle_params_and_body(self, usr: str) -> Iterable[CursorHandler]:
         dependencies: List[CursorHandler] = []
         while self._stack:
             cursor = self._stack.pop()
@@ -313,7 +329,7 @@ class FunctionDeclarationHandler(ScopedCursorHandler):
 
             # more or less ordered by likelihood
             if cursor.kind == CK.PARM_DECL:
-                pass
+                dependencies.append(ParameterDeclarationHandler(cursor, belongs_to=usr))
             elif cursor.kind == CK.COMPOUND_STMT:
                 pass
             else:
@@ -333,3 +349,25 @@ class MethodDeclarationHandler(FunctionDeclarationHandler):
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.CXX_METHOD
+
+
+@define
+class ParameterDeclarationHandler(ScopedCursorHandler):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.PARAMETER_DECL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.PARM_DECL
+
+    def _process(self, data: AttributeMap) -> Iterable[CursorHandler]:
+        # extract attributes from the cursor
+        data[ASTNodeAttribute.USR] = self.cursor.get_usr()
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
+        # data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        # include result type for function parameters
+        if (result_type := self.cursor.result_type):
+            if result_type.get_canonical().kind != clang.TypeKind.INVALID:
+                data[ASTNodeAttribute.RETURN_TYPE] = result_type.spelling
+        return ()  # no dependencies
