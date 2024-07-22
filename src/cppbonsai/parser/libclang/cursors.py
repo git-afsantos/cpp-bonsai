@@ -333,7 +333,7 @@ class FunctionDeclarationExtractor(CursorDataExtractor):
         if cursor.kind == CK.PARM_DECL:
             return ParameterDeclarationExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.COMPOUND_STMT:
-            return None
+            return CompoundStatementExtractor(cursor, belongs_to=self.usr)
         if self.namespace.consume(cursor):
             return None
         self.attributes.consume(cursor)
@@ -386,3 +386,83 @@ class ParameterDeclarationExtractor(LeafCursorDataExtractor):
 # Statements
 ###############################################################################
 
+
+@define
+class CompoundStatementExtractor(CursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.COMPOUND_STMT
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.COMPOUND_STMT
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        k = cursor.kind
+        usr = self.belongs_to
+        if k == CK.DECL_STMT:
+            return DeclarationStatementExtractor(cursor, belongs_to=usr)
+        if k == CK.CALL_EXPR:
+            return None
+        if k == CK.WHILE_STMT:
+            return None
+        if k == CK.RETURN_STMT:
+            return None
+        if k == CK.CXX_NEW_EXPR:
+            return None
+        if k == CK.CXX_DELETE_EXPR:
+            return None
+        if k == CK.COMPOUND_STMT:
+            return CompoundStatementExtractor(cursor, belongs_to=usr)
+        return None
+
+
+@define
+class DeclarationStatementExtractor(CursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.DECLARATION_STMT
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.DECL_STMT
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        if cursor.kind == CK.VAR_DECL:
+            return VariableDeclarationExtractor(cursor, belongs_to=self.belongs_to)
+        return None
+
+
+@define
+class VariableDeclarationExtractor(CursorDataExtractor):
+    # type_ref: NamespaceReferenceHandler = field(factory=NamespaceReferenceHandler, eq=False)
+
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.VARIABLE_DECL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.VAR_DECL
+
+    # def _setup(self):
+    #     self.type_ref = NamespaceReferenceHandler()
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        if (expr := _expression_cursor(cursor, belongs_to=self.usr)) is not None:
+            return expr
+        # ignore TYPE_REF and NAMESPACE_REF cursors
+        # self.type_ref.consume(cursor)
+        return None
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        # if (value := self.type_ref.get()):
+        #     data[self.type_ref.key] = value
+
+
+###############################################################################
+# Expressions
+###############################################################################
+
+
+def _expression_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataExtractor | None:
+    return None

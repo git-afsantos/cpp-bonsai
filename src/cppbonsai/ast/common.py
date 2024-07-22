@@ -37,9 +37,11 @@ class ASTNodeType(Enum):
     CONSTRUCTOR_DECL = auto()
     CONSTRUCTOR_DEF = auto()
     PARAMETER_DECL = auto()
+    VARIABLE_DECL = auto()
 
     # C++ Statement
-    STATEMENT = auto()
+    COMPOUND_STMT = auto()
+    DECLARATION_STMT = auto()
     IF_STMT = auto()
 
     # C++ Expression
@@ -66,6 +68,7 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.CONSTRUCTOR_DECL
             or self == ASTNodeType.METHOD_DECL
             or self == ASTNodeType.PARAMETER_DECL
+            or self == ASTNodeType.VARIABLE_DECL
         )
 
     @property
@@ -91,8 +94,9 @@ class ASTNodeType(Enum):
     @property
     def is_statement(self) -> bool:
         return (
-            self == ASTNodeType.IF_STMT
-            # or self == ASTNodeType.ASSIGNMENT_STMT
+            self == ASTNodeType.COMPOUND_STMT
+            or self == ASTNodeType.DECLARATION_STMT
+            or self == ASTNodeType.IF_STMT
         )
 
     @property
