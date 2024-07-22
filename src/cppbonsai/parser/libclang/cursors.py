@@ -403,20 +403,22 @@ def _statement_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataE
     k = cursor.kind
     if k == CK.DECL_STMT:
         return DeclarationStatementExtractor(cursor, belongs_to=belongs_to)
-    if k == CK.CALL_EXPR:
-        return None
+    # if k == CK.CALL_EXPR:
+    #     return None
     if k == CK.WHILE_STMT:
         return WhileStatementExtractor(cursor, belongs_to=belongs_to)
-    if k == CK.RETURN_STMT:
-        return None
-    if k == CK.CXX_NEW_EXPR:
-        return None
-    if k == CK.CXX_DELETE_EXPR:
-        return None
+    # if k == CK.RETURN_STMT:
+    #     return None
+    # if k == CK.CXX_NEW_EXPR:
+    #     return None
+    # if k == CK.CXX_DELETE_EXPR:
+    #     return None
     if k == CK.COMPOUND_STMT:
         return CompoundStatementExtractor(cursor, belongs_to=belongs_to)
     if k == CK.NULL_STMT:
         return NullStatementExtractor(cursor, belongs_to=belongs_to)
+    if k.is_statement():
+        return StatementExtractor(cursor, belongs_to=belongs_to)
     return None
 
 
@@ -428,6 +430,25 @@ class NullStatementExtractor(LeafCursorDataExtractor):
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.NULL_STMT
+
+
+@define
+class StatementExtractor(CursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.UNKNOWN_STMT
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind.is_statement()
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        return (
+            _expression_cursor(cursor, belongs_to=self.belongs_to)
+            or _statement_cursor(cursor, belongs_to=self.belongs_to)
+        )
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.CURSOR] = str(self.cursor.kind)
 
 
 @define
@@ -508,4 +529,23 @@ class WhileStatementExtractor(CursorDataExtractor):
 
 
 def _expression_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataExtractor | None:
+    if cursor.kind.is_expression():
+        return ExpressionExtractor(cursor)
     return None
+
+
+@define
+class ExpressionExtractor(CursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.UNKNOWN_EXPR
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind.is_expression()
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        return _expression_cursor(cursor, belongs_to=self.belongs_to)
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        data[ASTNodeAttribute.CURSOR] = str(self.cursor.kind)

@@ -45,10 +45,11 @@ class ASTNodeType(Enum):
     DECLARATION_STMT = auto()
     IF_STMT = auto()
     WHILE_STMT = auto()
+    UNKNOWN_STMT = auto()
 
     # C++ Expression
-    EXPRESSION = auto()
     LITERAL = auto()
+    UNKNOWN_EXPR = auto()
 
     # C++ Helper Node
     HELPER = auto()
@@ -101,12 +102,14 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.DECLARATION_STMT
             or self == ASTNodeType.IF_STMT
             or self == ASTNodeType.WHILE_STMT
+            or self == ASTNodeType.UNKNOWN_STMT
         )
 
     @property
     def is_expression(self) -> bool:
         return (
             self == ASTNodeType.LITERAL
+            or self == ASTNodeType.UNKNOWN_EXPR
         )
 
     @property
@@ -126,6 +129,7 @@ class ASTNodeAttribute(Enum):
     BASE_CLASSES = auto()
     BELONGS_TO = auto()
     ATTRIBUTES = auto()
+    CURSOR = auto()
 
 
 class AccessSpecifier(Enum):
