@@ -109,8 +109,9 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
         parser.workspace = file_path.parent
         logger.debug(f'resolved file path: {file_path}')
         print('[AST]', file_path)
-        ast = parser.parse(file_path, verbose=True)
+        ast = parser.parse(file_path)
         print(ast.pretty_str())
+        # print(parser.get_clang_ast(file_path, verbose=True))
 
 
 ###############################################################################
