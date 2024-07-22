@@ -407,8 +407,8 @@ def _statement_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataE
     #     return None
     if k == CK.WHILE_STMT:
         return WhileStatementExtractor(cursor, belongs_to=belongs_to)
-    # if k == CK.RETURN_STMT:
-    #     return None
+    if k == CK.RETURN_STMT:
+        return ReturnStatementExtractor(cursor, belongs_to=belongs_to)
     # if k == CK.CXX_NEW_EXPR:
     #     return None
     # if k == CK.CXX_DELETE_EXPR:
@@ -462,6 +462,19 @@ class CompoundStatementExtractor(CursorDataExtractor):
 
     def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
         return _statement_cursor(cursor, belongs_to=self.belongs_to)
+
+
+@define
+class ReturnStatementExtractor(CursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.RETURN_STMT
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.RETURN_STMT
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        return _expression_cursor(cursor, belongs_to=self.belongs_to)
 
 
 @define

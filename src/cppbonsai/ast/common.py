@@ -45,6 +45,7 @@ class ASTNodeType(Enum):
     DECLARATION_STMT = auto()
     IF_STMT = auto()
     WHILE_STMT = auto()
+    RETURN_STMT = auto()
     UNKNOWN_STMT = auto()
 
     # C++ Expression
@@ -102,6 +103,7 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.DECLARATION_STMT
             or self == ASTNodeType.IF_STMT
             or self == ASTNodeType.WHILE_STMT
+            or self == ASTNodeType.RETURN_STMT
             or self == ASTNodeType.UNKNOWN_STMT
         )
 
