@@ -40,9 +40,11 @@ class ASTNodeType(Enum):
     VARIABLE_DECL = auto()
 
     # C++ Statement
+    NULL_STMT = auto()
     COMPOUND_STMT = auto()
     DECLARATION_STMT = auto()
     IF_STMT = auto()
+    WHILE_STMT = auto()
 
     # C++ Expression
     EXPRESSION = auto()
@@ -94,9 +96,11 @@ class ASTNodeType(Enum):
     @property
     def is_statement(self) -> bool:
         return (
-            self == ASTNodeType.COMPOUND_STMT
+            self == ASTNodeType.NULL_STMT
+            or self == ASTNodeType.COMPOUND_STMT
             or self == ASTNodeType.DECLARATION_STMT
             or self == ASTNodeType.IF_STMT
+            or self == ASTNodeType.WHILE_STMT
         )
 
     @property

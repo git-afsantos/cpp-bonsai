@@ -204,6 +204,12 @@ class TranslationUnitExtractor(CursorDataExtractor):
             return FunctionDeclarationExtractor(cursor)
         if cursor.kind == CK.STRUCT_DECL:
             pass  # dependencies.append(ClassDeclarationExtractor(cursor, belongs_to=usr))
+        if cursor.kind == CK.CXX_METHOD:
+            return MethodDeclarationExtractor(cursor, belongs_to=self.usr)
+        if cursor.kind == CK.CONSTRUCTOR:
+            pass
+        if cursor.kind == CK.DESTRUCTOR:
+            pass
         if cursor.kind == CK.UNION_DECL:
             pass
         return None
@@ -227,6 +233,12 @@ class NamespaceExtractor(CursorDataExtractor):
             return FunctionDeclarationExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.STRUCT_DECL:
             pass  # return ClassDeclarationExtractor(cursor, belongs_to=self.usr)
+        if cursor.kind == CK.CXX_METHOD:
+            return MethodDeclarationExtractor(cursor, belongs_to=self.usr)
+        if cursor.kind == CK.CONSTRUCTOR:
+            pass
+        if cursor.kind == CK.DESTRUCTOR:
+            pass
         if cursor.kind == CK.UNION_DECL:
             pass
         return None
@@ -387,6 +399,37 @@ class ParameterDeclarationExtractor(LeafCursorDataExtractor):
 ###############################################################################
 
 
+def _statement_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataExtractor | None:
+    k = cursor.kind
+    if k == CK.DECL_STMT:
+        return DeclarationStatementExtractor(cursor, belongs_to=belongs_to)
+    if k == CK.CALL_EXPR:
+        return None
+    if k == CK.WHILE_STMT:
+        return WhileStatementExtractor(cursor, belongs_to=belongs_to)
+    if k == CK.RETURN_STMT:
+        return None
+    if k == CK.CXX_NEW_EXPR:
+        return None
+    if k == CK.CXX_DELETE_EXPR:
+        return None
+    if k == CK.COMPOUND_STMT:
+        return CompoundStatementExtractor(cursor, belongs_to=belongs_to)
+    if k == CK.NULL_STMT:
+        return NullStatementExtractor(cursor, belongs_to=belongs_to)
+    return None
+
+
+@define
+class NullStatementExtractor(LeafCursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.NULL_STMT
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.NULL_STMT
+
+
 @define
 class CompoundStatementExtractor(CursorDataExtractor):
     @property
@@ -397,23 +440,7 @@ class CompoundStatementExtractor(CursorDataExtractor):
         return cursor.kind == CK.COMPOUND_STMT
 
     def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
-        k = cursor.kind
-        usr = self.belongs_to
-        if k == CK.DECL_STMT:
-            return DeclarationStatementExtractor(cursor, belongs_to=usr)
-        if k == CK.CALL_EXPR:
-            return None
-        if k == CK.WHILE_STMT:
-            return None
-        if k == CK.RETURN_STMT:
-            return None
-        if k == CK.CXX_NEW_EXPR:
-            return None
-        if k == CK.CXX_DELETE_EXPR:
-            return None
-        if k == CK.COMPOUND_STMT:
-            return CompoundStatementExtractor(cursor, belongs_to=usr)
-        return None
+        return _statement_cursor(cursor, belongs_to=self.belongs_to)
 
 
 @define
@@ -457,6 +484,22 @@ class VariableDeclarationExtractor(CursorDataExtractor):
         data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
         # if (value := self.type_ref.get()):
         #     data[self.type_ref.key] = value
+
+
+@define
+class WhileStatementExtractor(CursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.WHILE_STMT
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.WHILE_STMT
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        return (
+            _expression_cursor(cursor, belongs_to=self.belongs_to)
+            or _statement_cursor(cursor, belongs_to=self.belongs_to)
+        )
 
 
 ###############################################################################
