@@ -18,7 +18,7 @@ import clang.cindex as clang
 
 from cppbonsai.ast.common import AST, NULL_ID, ASTNode, ASTNodeId, AttributeMap
 from cppbonsai.parser.libclang.cursors import CursorDataExtractor, TranslationUnitExtractor
-from cppbonsai.parser.libclang.util import cursor_str
+from cppbonsai.parser.libclang.util import ast_str, cursor_str
 
 ###############################################################################
 # Notes
@@ -140,14 +140,21 @@ class ClangParser:
     workspace: Optional[Path] = None
     _index: Optional[clang.Index] = None
 
-    def parse(self, file_path: Path, verbose: bool = False):
+    def parse(self, file_path: Path) -> AST:
         if self.database is None:
             unit: clang.TranslationUnit = self._parse_without_db(file_path)
         else:
             unit = self._parse_from_db(file_path)
         check_compilation_problems(unit)
         return self._build_ast(unit)
-        # return ast_str(unit.cursor, workspace=self.workspace, verbose=verbose)
+
+    def get_clang_ast(self, file_path: Path, verbose: bool = False) -> str:
+        if self.database is None:
+            unit: clang.TranslationUnit = self._parse_without_db(file_path)
+        else:
+            unit = self._parse_from_db(file_path)
+        check_compilation_problems(unit)
+        return ast_str(unit.cursor, workspace=self.workspace, verbose=verbose)
 
     def _parse_from_db(self, file_path: Path) -> clang.TranslationUnit:
         key = str(file_path)
