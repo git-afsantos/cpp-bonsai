@@ -49,7 +49,12 @@ class ASTNodeType(Enum):
     UNKNOWN_STMT = auto()
 
     # C++ Expression
-    LITERAL = auto()
+    INTEGER_LITERAL = auto()
+    FLOAT_LITERAL = auto()
+    IMAGINARY_LITERAL = auto()
+    CHARACTER_LITERAL = auto()
+    STRING_LITERAL = auto()
+    BOOLEAN_LITERAL = auto()
     UNKNOWN_EXPR = auto()
 
     # C++ Helper Node
@@ -98,19 +103,24 @@ class ASTNodeType(Enum):
     @property
     def is_statement(self) -> bool:
         return (
-            self == ASTNodeType.NULL_STMT
-            or self == ASTNodeType.COMPOUND_STMT
+            self == ASTNodeType.COMPOUND_STMT
             or self == ASTNodeType.DECLARATION_STMT
             or self == ASTNodeType.IF_STMT
             or self == ASTNodeType.WHILE_STMT
             or self == ASTNodeType.RETURN_STMT
+            or self == ASTNodeType.NULL_STMT
             or self == ASTNodeType.UNKNOWN_STMT
         )
 
     @property
     def is_expression(self) -> bool:
         return (
-            self == ASTNodeType.LITERAL
+            self == ASTNodeType.INTEGER_LITERAL
+            or self == ASTNodeType.FLOAT_LITERAL
+            or self == ASTNodeType.BOOLEAN_LITERAL
+            or self == ASTNodeType.STRING_LITERAL
+            or self == ASTNodeType.CHARACTER_LITERAL
+            or self == ASTNodeType.IMAGINARY_LITERAL
             or self == ASTNodeType.UNKNOWN_EXPR
         )
 
@@ -131,6 +141,7 @@ class ASTNodeAttribute(Enum):
     BASE_CLASSES = auto()
     BELONGS_TO = auto()
     ATTRIBUTES = auto()
+    VALUE = auto()
     CURSOR = auto()
 
 

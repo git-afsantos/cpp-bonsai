@@ -542,8 +542,14 @@ class WhileStatementExtractor(CursorDataExtractor):
 
 
 def _expression_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataExtractor | None:
+    if cursor.kind == CK.INTEGER_LITERAL:
+        return IntegerLiteralExtractor(cursor, belongs_to=belongs_to)
+    if cursor.kind == CK.FLOATING_LITERAL:
+        return FloatLiteralExtractor(cursor, belongs_to=belongs_to)
+    if cursor.kind == CK.CXX_BOOL_LITERAL_EXPR:
+        return BooleanLiteralExtractor(cursor, belongs_to=belongs_to)
     if cursor.kind.is_expression():
-        return ExpressionExtractor(cursor)
+        return ExpressionExtractor(cursor, belongs_to=belongs_to)
     return None
 
 
@@ -562,3 +568,57 @@ class ExpressionExtractor(CursorDataExtractor):
     def _write_custom_attributes(self, data: AttributeMap):
         data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
         data[ASTNodeAttribute.CURSOR] = str(self.cursor.kind)
+
+
+@define
+class IntegerLiteralExtractor(LeafCursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.INTEGER_LITERAL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.INTEGER_LITERAL
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        for token in self.cursor.get_tokens():
+            if token.kind == TK.LITERAL:
+                if (value := token.spelling).isnumeric():
+                    data[ASTNodeAttribute.VALUE] = value
+                    break
+
+
+@define
+class FloatLiteralExtractor(LeafCursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.FLOAT_LITERAL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.FLOATING_LITERAL
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        for token in self.cursor.get_tokens():
+            if token.kind == TK.LITERAL:
+                if (value := token.spelling).isnumeric():
+                    data[ASTNodeAttribute.VALUE] = value
+                    break
+
+
+@define
+class BooleanLiteralExtractor(LeafCursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.BOOLEAN_LITERAL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.CXX_BOOL_LITERAL_EXPR
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        for token in self.cursor.get_tokens():
+            if token.kind == TK.KEYWORD:
+                if (value := token.spelling) == 'true' or value == 'false':
+                    data[ASTNodeAttribute.VALUE] = value
+                    break
