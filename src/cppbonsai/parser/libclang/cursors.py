@@ -461,7 +461,10 @@ class CompoundStatementExtractor(CursorDataExtractor):
         return cursor.kind == CK.COMPOUND_STMT
 
     def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
-        return _statement_cursor(cursor, belongs_to=self.belongs_to)
+        return (
+            _statement_cursor(cursor, belongs_to=self.belongs_to)
+            or _expression_cursor(cursor, belongs_to=self.belongs_to)
+        )
 
 
 @define
@@ -542,6 +545,8 @@ class WhileStatementExtractor(CursorDataExtractor):
 
 
 def _expression_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataExtractor | None:
+    if cursor.kind == CK.BINARY_OPERATOR:
+        return BinaryOperatorExtractor(cursor, belongs_to=belongs_to)
     if cursor.kind == CK.INTEGER_LITERAL:
         return IntegerLiteralExtractor(cursor, belongs_to=belongs_to)
     if cursor.kind == CK.FLOATING_LITERAL:
@@ -622,3 +627,23 @@ class BooleanLiteralExtractor(LeafCursorDataExtractor):
                 if (value := token.spelling) == 'true' or value == 'false':
                     data[ASTNodeAttribute.VALUE] = value
                     break
+
+
+@define
+class BinaryOperatorExtractor(CursorDataExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.BINARY_OPERATOR
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.BINARY_OPERATOR
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        return _expression_cursor(cursor, belongs_to=self.belongs_to)
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        for token in self.cursor.get_tokens():
+            if token.kind == TK.PUNCTUATION:
+                data[ASTNodeAttribute.NAME] = token.spelling
+                break
