@@ -53,7 +53,12 @@ def get_access_specifier(cursor: clang.Cursor) -> AccessSpecifier:
     raise ValueError(f'invalid access specifier: {cursor_str(cursor, verbose=True)}')
 
 
-def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> str:
+def cursor_str(
+    cursor: clang.Cursor,
+    indent: int = 0,
+    verbose: bool = False,
+    verbosity: int = 6,
+) -> str:
     line = 0
     col = 0
     try:
@@ -84,7 +89,7 @@ def cursor_str(cursor: clang.Cursor, indent: int = 0, verbose: bool = False) -> 
             items.append(f'[{access}]')
     tokens = [(t.spelling, t.kind.name) for t in cursor.get_tokens()]
     items.append(f'[{len(tokens)} tokens]')
-    if verbose and (len(tokens) < 5 or name.endswith('LITERAL')):
+    if verbose and (len(tokens) < verbosity or name.endswith('LITERAL')):
         items.append(f'{tokens}')
     return ' '.join(items)
 
@@ -93,6 +98,7 @@ def ast_str(
     top_cursor: clang.Cursor,
     workspace: Optional[Path] = None,
     verbose: bool = False,
+    verbosity: int = 6,
 ) -> str:
     assert top_cursor.kind == CK.TRANSLATION_UNIT
 
@@ -112,7 +118,7 @@ def ast_str(
     lines: List[str] = []
     while stack:
         indent, cursor = stack.pop()
-        lines.append(cursor_str(cursor, indent=indent, verbose=verbose))
+        lines.append(cursor_str(cursor, indent=indent, verbose=verbose, verbosity=verbosity))
         for child in reversed(list(cursor.get_children())):
             stack.append((indent + 1, child))
 

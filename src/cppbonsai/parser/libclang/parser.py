@@ -148,13 +148,14 @@ class ClangParser:
         check_compilation_problems(unit)
         return self._build_ast(unit)
 
-    def get_clang_ast(self, file_path: Path, verbose: bool = False) -> str:
+    def get_clang_ast(self, file_path: Path, verbosity: int = 0) -> str:
         if self.database is None:
             unit: clang.TranslationUnit = self._parse_without_db(file_path)
         else:
             unit = self._parse_from_db(file_path)
         check_compilation_problems(unit)
-        return ast_str(unit.cursor, workspace=self.workspace, verbose=verbose)
+        verbose: bool = verbosity > 0
+        return ast_str(unit.cursor, workspace=self.workspace, verbose=verbose, verbosity=verbosity)
 
     def _parse_from_db(self, file_path: Path) -> clang.TranslationUnit:
         key = str(file_path)

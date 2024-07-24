@@ -53,6 +53,21 @@ def parse_arguments(argv: Optional[List[str]]) -> Dict[str, Any]:
     )
 
     parser.add_argument(
+        '-v',
+        '--verbosity',
+        metavar='N',
+        default=argparse.SUPPRESS,
+        type=int,
+        help='the desired verbosity level',
+    )
+
+    parser.add_argument(
+        '--print',
+        action='store_true',
+        help='print only the clang AST',
+    )
+
+    parser.add_argument(
         'args',
         metavar='ARG',
         nargs=argparse.REMAINDER,
@@ -109,9 +124,12 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
         parser.workspace = file_path.parent
         logger.debug(f'resolved file path: {file_path}')
         print('[AST]', file_path)
-        ast = parser.parse(file_path)
-        print(ast.pretty_str())
-        # print(parser.get_clang_ast(file_path, verbose=True))
+        if args.get('print', False):
+            verbosity = args.get('verbosity', 0)
+            print(parser.get_clang_ast(file_path, verbosity=verbosity))
+        else:
+            ast = parser.parse(file_path)
+            print(ast.pretty_str())
 
 
 ###############################################################################
