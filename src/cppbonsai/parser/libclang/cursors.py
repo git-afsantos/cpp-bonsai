@@ -547,6 +547,8 @@ class WhileStatementExtractor(CursorDataExtractor):
 def _expression_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataExtractor | None:
     if cursor.kind == CK.BINARY_OPERATOR:
         return BinaryOperatorExtractor(cursor, belongs_to=belongs_to)
+    if cursor.kind == CK.UNARY_OPERATOR:
+        return UnaryOperatorExtractor(cursor, belongs_to=belongs_to)
     if cursor.kind == CK.INTEGER_LITERAL:
         return IntegerLiteralExtractor(cursor, belongs_to=belongs_to)
     if cursor.kind == CK.FLOATING_LITERAL:
@@ -630,14 +632,7 @@ class BooleanLiteralExtractor(LeafCursorDataExtractor):
 
 
 @define
-class BinaryOperatorExtractor(CursorDataExtractor):
-    @property
-    def node_type(self) -> ASTNodeType:
-        return ASTNodeType.BINARY_OPERATOR
-
-    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
-        return cursor.kind == CK.BINARY_OPERATOR
-
+class OperatorExtractor(CursorDataExtractor):
     def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
         return _expression_cursor(cursor, belongs_to=self.belongs_to)
 
@@ -646,4 +641,25 @@ class BinaryOperatorExtractor(CursorDataExtractor):
         for token in self.cursor.get_tokens():
             if token.kind == TK.PUNCTUATION:
                 data[ASTNodeAttribute.NAME] = token.spelling
+                data[ASTNodeAttribute.DISPLAY_NAME] = f'operator{token.spelling}'
                 break
+
+
+@define
+class UnaryOperatorExtractor(OperatorExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.UNARY_OPERATOR
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.UNARY_OPERATOR
+
+
+@define
+class BinaryOperatorExtractor(OperatorExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.BINARY_OPERATOR
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.BINARY_OPERATOR

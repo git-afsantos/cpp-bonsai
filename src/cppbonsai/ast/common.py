@@ -55,6 +55,7 @@ class ASTNodeType(Enum):
     CHARACTER_LITERAL = auto()
     STRING_LITERAL = auto()
     BOOLEAN_LITERAL = auto()
+    UNARY_OPERATOR = auto()
     BINARY_OPERATOR = auto()
     UNKNOWN_EXPR = auto()
 
@@ -122,6 +123,7 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.STRING_LITERAL
             or self == ASTNodeType.CHARACTER_LITERAL
             or self == ASTNodeType.IMAGINARY_LITERAL
+            or self == ASTNodeType.UNARY_OPERATOR
             or self == ASTNodeType.BINARY_OPERATOR
             or self == ASTNodeType.UNKNOWN_EXPR
         )
