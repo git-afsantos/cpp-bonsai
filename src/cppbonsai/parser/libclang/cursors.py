@@ -131,21 +131,16 @@ class CursorDataExtractor:
         return location_from_cursor(self.cursor)
 
     def process(self, data: AttributeMap) -> Iterable['CursorDataExtractor']:
-        class_name: str = self.__class__.__name__
-        logger.debug(f'{class_name}.process()')
+        logger.debug(f'{self.__class__.__name__}.process()')
         self.usr = self.cursor.get_usr() or ''
-        dependencies: List[CursorDataExtractor] = []
-        for cursor in self.cursor.get_children():
-            logger.debug(f'found child cursor: {cursor_str(cursor, verbose=True)}')
-            dep = self._process_child_cursor(cursor)
-            if dep is not None:
-                logger.debug(f'{class_name}: new dependency found: {dep!r}')
-                dependencies.append(dep)
+        self._setup()
+        dependencies: List[CursorDataExtractor] = self._process_child_cursors()
         if self.belongs_to:
             data[ASTNodeAttribute.BELONGS_TO] = self.belongs_to
         if self.usr:
             data[ASTNodeAttribute.USR] = self.usr
         self._write_custom_attributes(data)
+        self._cleanup()
         return dependencies
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
@@ -154,17 +149,24 @@ class CursorDataExtractor:
     def _setup(self):
         pass
 
+    def _cleanup(self):
+        pass
+
+    def _process_child_cursors(self) -> List['CursorDataExtractor']:
+        dependencies: List[CursorDataExtractor] = []
+        for cursor in self.cursor.get_children():
+            logger.debug(f'found child cursor: {cursor_str(cursor, verbose=True)}')
+            dep = self._process_child_cursor(cursor)
+            if dep is not None:
+                logger.debug(f'{self.__class__.__name__}: new dependency found: {dep!r}')
+                dependencies.append(dep)
+        return dependencies
+
     def _process_child_cursor(self, cursor: clang.Cursor) -> Optional['CursorDataExtractor']:
-        raise NotImplementedError()
+        return None  # children (if any) are ignored
 
     def _write_custom_attributes(self, data: AttributeMap):
         pass
-
-
-@define
-class LeafCursorDataExtractor(CursorDataExtractor):
-    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
-        return None  # children (if any) are ignored
 
 
 ###############################################################################
@@ -301,7 +303,7 @@ class ClassDeclarationExtractor(CursorDataExtractor):
 
 
 @define
-class FieldDeclarationExtractor(LeafCursorDataExtractor):
+class FieldDeclarationExtractor(CursorDataExtractor):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.FIELD_DECL
@@ -376,7 +378,7 @@ class MethodDeclarationExtractor(FunctionDeclarationExtractor):
 
 
 @define
-class ParameterDeclarationExtractor(LeafCursorDataExtractor):
+class ParameterDeclarationExtractor(CursorDataExtractor):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.PARAMETER_DECL
@@ -423,7 +425,7 @@ def _statement_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataE
 
 
 @define
-class NullStatementExtractor(LeafCursorDataExtractor):
+class NullStatementExtractor(CursorDataExtractor):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.NULL_STMT
@@ -544,24 +546,90 @@ class WhileStatementExtractor(CursorDataExtractor):
 ###############################################################################
 
 
-def _expression_cursor(cursor: clang.Cursor, belongs_to: str = '') -> CursorDataExtractor | None:
+def _expression_cursor(
+    cursor: clang.Cursor,
+    belongs_to: str = '',
+    param_index: int = -1,
+) -> CursorDataExtractor | None:
+    data_type: str = ''
+    if cursor.kind == CK.UNEXPOSED_EXPR:
+        children = list(cursor.get_children())
+        if len(children) != 1:
+            logger.error(f'unknown unexposed expression with {len(children)} children')
+            for child in children:
+                logger.debug(f'child cursor: {cursor_str(child, verbose=True)}')
+            return None
+        data_type = cursor.type.get_canonical().spelling
+        while cursor.kind == CK.UNEXPOSED_EXPR:
+            cursor = next(cursor.get_children())
+
+    if cursor.kind == CK.CALL_EXPR:
+        return FunctionCallExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind == CK.BINARY_OPERATOR:
-        return BinaryOperatorExtractor(cursor, belongs_to=belongs_to)
+        return BinaryOperatorExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind == CK.UNARY_OPERATOR:
-        return UnaryOperatorExtractor(cursor, belongs_to=belongs_to)
+        return UnaryOperatorExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind == CK.INTEGER_LITERAL:
-        return IntegerLiteralExtractor(cursor, belongs_to=belongs_to)
+        return IntegerLiteralExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind == CK.FLOATING_LITERAL:
-        return FloatLiteralExtractor(cursor, belongs_to=belongs_to)
+        return FloatLiteralExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind == CK.CXX_BOOL_LITERAL_EXPR:
-        return BooleanLiteralExtractor(cursor, belongs_to=belongs_to)
+        return BooleanLiteralExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind.is_expression():
-        return ExpressionExtractor(cursor, belongs_to=belongs_to)
+        return UnknownExpressionExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     return None
 
 
 @define
 class ExpressionExtractor(CursorDataExtractor):
+    data_type: str = field(default='', eq=False)
+    # if this is an argument for a function call, store its position
+    param_index: int = field(default=-1, eq=False)
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data_type = self.data_type or self.cursor.type.get_canonical().spelling
+        data[ASTNodeAttribute.DATA_TYPE] = data_type
+        if self.param_index >= 0:
+            data[ASTNodeAttribute.PARAMETER_INDEX] = str(self.param_index)
+
+
+@define
+class UnknownExpressionExtractor(ExpressionExtractor):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.UNKNOWN_EXPR
@@ -573,12 +641,12 @@ class ExpressionExtractor(CursorDataExtractor):
         return _expression_cursor(cursor, belongs_to=self.belongs_to)
 
     def _write_custom_attributes(self, data: AttributeMap):
-        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        super()._write_custom_attributes(data)
         data[ASTNodeAttribute.CURSOR] = str(self.cursor.kind)
 
 
 @define
-class IntegerLiteralExtractor(LeafCursorDataExtractor):
+class IntegerLiteralExtractor(ExpressionExtractor):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.INTEGER_LITERAL
@@ -587,7 +655,7 @@ class IntegerLiteralExtractor(LeafCursorDataExtractor):
         return cursor.kind == CK.INTEGER_LITERAL
 
     def _write_custom_attributes(self, data: AttributeMap):
-        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        super()._write_custom_attributes(data)
         for token in self.cursor.get_tokens():
             if token.kind == TK.LITERAL:
                 if (value := token.spelling).isnumeric():
@@ -596,7 +664,7 @@ class IntegerLiteralExtractor(LeafCursorDataExtractor):
 
 
 @define
-class FloatLiteralExtractor(LeafCursorDataExtractor):
+class FloatLiteralExtractor(ExpressionExtractor):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.FLOAT_LITERAL
@@ -605,7 +673,7 @@ class FloatLiteralExtractor(LeafCursorDataExtractor):
         return cursor.kind == CK.FLOATING_LITERAL
 
     def _write_custom_attributes(self, data: AttributeMap):
-        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        super()._write_custom_attributes(data)
         for token in self.cursor.get_tokens():
             if token.kind == TK.LITERAL:
                 if (value := token.spelling).isnumeric():
@@ -614,7 +682,7 @@ class FloatLiteralExtractor(LeafCursorDataExtractor):
 
 
 @define
-class BooleanLiteralExtractor(LeafCursorDataExtractor):
+class BooleanLiteralExtractor(ExpressionExtractor):
     @property
     def node_type(self) -> ASTNodeType:
         return ASTNodeType.BOOLEAN_LITERAL
@@ -623,7 +691,7 @@ class BooleanLiteralExtractor(LeafCursorDataExtractor):
         return cursor.kind == CK.CXX_BOOL_LITERAL_EXPR
 
     def _write_custom_attributes(self, data: AttributeMap):
-        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        super()._write_custom_attributes(data)
         for token in self.cursor.get_tokens():
             if token.kind == TK.KEYWORD:
                 if (value := token.spelling) == 'true' or value == 'false':
@@ -632,12 +700,15 @@ class BooleanLiteralExtractor(LeafCursorDataExtractor):
 
 
 @define
-class OperatorExtractor(CursorDataExtractor):
+class OperatorExtractor(ExpressionExtractor):
+    _arg_index: int = field(default=-1, eq=False)
+
     def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
-        return _expression_cursor(cursor, belongs_to=self.belongs_to)
+        self._arg_index += 1
+        return _expression_cursor(cursor, belongs_to=self.belongs_to, param_index=self._arg_index)
 
     def _write_custom_attributes(self, data: AttributeMap):
-        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
+        super()._write_custom_attributes(data)
         for token in self.cursor.get_tokens():
             if token.kind == TK.PUNCTUATION:
                 data[ASTNodeAttribute.NAME] = token.spelling
@@ -663,3 +734,43 @@ class BinaryOperatorExtractor(OperatorExtractor):
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.BINARY_OPERATOR
+
+
+@define
+class FunctionCallExtractor(ExpressionExtractor):
+    _arguments: List[clang.Cursor] = field(factory=list, eq=False)
+    _arg_index: int = field(default=0, eq=False)
+
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.FUNCTION_CALL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.CALL_EXPR
+
+    def _setup(self):
+        # Build a stack of arguments so that lookup and removal
+        # are more efficient. This assumes that child cursors
+        # will always respect the ordering of argument cursors.
+        self._arguments = list(self.cursor.get_arguments())
+        self._arguments.reverse()
+        self._arg_index = 0
+
+    def _cleanup(self):
+        for cursor in self._arguments:
+            logger.error(
+                f'{self.__class__.__name__}: unhandled argument cursor: '
+                f'{cursor_str(cursor, verbose=True)}'
+            )
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        i = -1
+        if self._arguments and cursor == self._arguments[-1]:
+            self._arguments.pop()
+            i = self._arg_index
+            self._arg_index += 1
+        return _expression_cursor(cursor, belongs_to=self.belongs_to, param_index=i)
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        super()._write_custom_attributes(data)
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling

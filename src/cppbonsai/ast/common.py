@@ -57,6 +57,7 @@ class ASTNodeType(Enum):
     BOOLEAN_LITERAL = auto()
     UNARY_OPERATOR = auto()
     BINARY_OPERATOR = auto()
+    FUNCTION_CALL = auto()
     UNKNOWN_EXPR = auto()
 
     # C++ Helper Node
@@ -125,6 +126,7 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.IMAGINARY_LITERAL
             or self == ASTNodeType.UNARY_OPERATOR
             or self == ASTNodeType.BINARY_OPERATOR
+            or self == ASTNodeType.FUNCTION_CALL
             or self == ASTNodeType.UNKNOWN_EXPR
         )
 
@@ -146,6 +148,7 @@ class ASTNodeAttribute(Enum):
     BELONGS_TO = auto()
     ATTRIBUTES = auto()
     VALUE = auto()
+    PARAMETER_INDEX = auto()
     CURSOR = auto()
 
 
