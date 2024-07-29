@@ -250,7 +250,7 @@ class TranslationUnitExtractor(CursorDataExtractor):
         if cursor.kind == CK.CXX_METHOD:
             return MethodDeclarationExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.CONSTRUCTOR:
-            pass
+            return ConstructorExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.DESTRUCTOR:
             pass
         if cursor.kind == CK.UNION_DECL:
@@ -279,7 +279,7 @@ class NamespaceExtractor(CursorDataExtractor):
         if cursor.kind == CK.CXX_METHOD:
             return MethodDeclarationExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.CONSTRUCTOR:
-            pass
+            return ConstructorExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.DESTRUCTOR:
             pass
         if cursor.kind == CK.UNION_DECL:
@@ -329,7 +329,7 @@ class ClassDeclarationExtractor(CursorDataExtractor):
         if cursor.kind == CK.FIELD_DECL:
             return FieldDeclarationExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.CONSTRUCTOR:
-            pass
+            return ConstructorExtractor(cursor, belongs_to=self.usr)
         if cursor.kind == CK.DESTRUCTOR:
             pass
         if cursor.kind == CK.CLASS_DECL:
@@ -416,6 +416,43 @@ class MethodDeclarationExtractor(FunctionDeclarationExtractor):
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.CXX_METHOD
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.ACCESS_SPECIFIER] = get_access_specifier(self.cursor).value
+        return super()._write_custom_attributes(data)
+
+
+@define
+class ConstructorExtractor(FunctionDeclarationExtractor):
+    _member: Optional['MemberInitializerExtractor'] = field(default=None, eq=False)
+
+    @property
+    def node_type(self) -> ASTNodeType:
+        if self.cursor.is_definition():
+            return ASTNodeType.CONSTRUCTOR_DEF
+        else:
+            return ASTNodeType.CONSTRUCTOR_DECL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.CONSTRUCTOR
+
+    def _setup(self):
+        self._member = None
+
+    def _cleanup(self):
+        self._member = None
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        # https://en.cppreference.com/w/cpp/language/constructor
+        if cursor.kind == CK.MEMBER_REF:
+            self._member = MemberInitializerExtractor(cursor)
+            return None
+        if self._member is not None and cursor.kind.is_expression():
+            member = self._member
+            self._member = None
+            member.expr = cursor
+            return member
+        return super()._process_child_cursor(cursor)
 
     def _write_custom_attributes(self, data: AttributeMap):
         data[ASTNodeAttribute.ACCESS_SPECIFIER] = get_access_specifier(self.cursor).value
@@ -584,6 +621,30 @@ class WhileStatementExtractor(CursorDataExtractor):
             _expression_cursor(cursor, belongs_to=self.belongs_to)
             or _statement_cursor(cursor, belongs_to=self.belongs_to)
         )
+
+
+@define
+class MemberInitializerExtractor(CursorDataExtractor):
+    expr: clang.Cursor | None = field(default=None, eq=False)
+
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.MEMBER_INITIALIZER
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.MEMBER_REF
+
+    def _process_child_cursors(self) -> List[CursorDataExtractor]:
+        dependencies: List[CursorDataExtractor] = super()._process_child_cursors()
+        if self.expr is not None:
+            if (dep := _expression_cursor(self.expr, belongs_to=self.belongs_to)) is not None:
+                dependencies.insert(0, dep)
+        return dependencies
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.NAME] = self.cursor.spelling
+        # data[ASTNodeAttribute.DISPLAY_NAME] = self.cursor.displayname
+        data[ASTNodeAttribute.DATA_TYPE] = self.cursor.type.get_canonical().spelling
 
 
 ###############################################################################
