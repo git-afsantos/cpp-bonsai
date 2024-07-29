@@ -5,16 +5,18 @@
 # Imports
 ###############################################################################
 
-from typing import Any, Final, Iterable, Mapping, NewType
+from typing import Any, Final, Iterable, Mapping, NewType, Tuple
 
-from collections import UserDict
 from enum import Enum, auto
+import logging
 
 from attrs import field, frozen
 
 ###############################################################################
 # Constants
 ###############################################################################
+
+logger: Final[logging.Logger] = logging.getLogger(__name__)
 
 ASTNodeId = NewType('ASTNodeId', int)
 
@@ -264,11 +266,27 @@ class AST:
             yield node
             stack.extend(reversed(node.children))
 
-    def pretty_str(self, indent: int = 0) -> str:
+    def pretty_str(self, indent: int = 0, hierarchical: bool = False) -> str:
         ws = ' ' * indent
         lines = [f'{ws}AST:', f'{ws}  name: {self.name!r}']
-        entries = list(self.nodes.items())
-        entries.sort(key=lambda e: e[0])
+        if hierarchical:
+            entries: Iterable[Tuple[ASTNodeId, ASTNode]] = []
+            visited = set()
+            stack = [self.nodes[NULL_ID]]
+            while stack:
+                node: ASTNode = stack.pop()
+                entries.append((node.id, node))
+                visited.add(node.id)
+                children = [self.nodes[cid] for cid in node.children]
+                stack.extend(reversed(children))
+            # dangling nodes
+            for key, node in self.nodes.items():
+                if key not in visited:
+                    logger.debug(f'found dangling node: {node}')
+                    entries.append((key, node))
+        else:
+            entries = list(self.nodes.items())
+            entries.sort(key=lambda e: e[0])
         for key, node in entries:
             lines.append(f'{ws}  {key}:')
             lines.append(node.pretty_str(indent=(indent + 4)))

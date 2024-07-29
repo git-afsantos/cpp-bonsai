@@ -129,7 +129,7 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
             print(parser.get_clang_ast(file_path, verbosity=verbosity))
         else:
             ast = parser.parse(file_path)
-            print(ast.pretty_str())
+            print(ast.pretty_str(hierarchical=True))
 
 
 ###############################################################################
