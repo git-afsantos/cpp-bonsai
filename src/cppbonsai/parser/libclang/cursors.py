@@ -570,6 +570,27 @@ def _expression_cursor(
             param_index=param_index,
             data_type=data_type,
         )
+    if cursor.kind == CK.DECL_REF_EXPR:
+        return ReferenceExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
+    if cursor.kind == CK.MEMBER_REF_EXPR:
+        return MemberReferenceExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
+    if cursor.kind == CK.CXX_THIS_EXPR:
+        return ThisReferenceExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind == CK.BINARY_OPERATOR:
         return BinaryOperatorExtractor(
             cursor,
@@ -734,6 +755,63 @@ class BinaryOperatorExtractor(OperatorExtractor):
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.BINARY_OPERATOR
+
+
+@define
+class ThisReferenceExtractor(ExpressionExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.THIS_REFERENCE
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.CXX_THIS_EXPR
+
+
+@define
+class ReferenceExtractor(ExpressionExtractor):
+    namespace: NamespaceReferenceHandler = field(factory=NamespaceReferenceHandler, eq=False)
+
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.DECL_REFERENCE
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.DECL_REF_EXPR
+
+    def _setup(self):
+        self.namespace = NamespaceReferenceHandler()
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        consumed = self.namespace.consume(cursor)
+        assert consumed
+        return None
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        super()._write_custom_attributes(data)
+        name: str = self.cursor.spelling
+        data[ASTNodeAttribute.NAME] = name
+        if (ns := self.namespace.get()):
+            data[ASTNodeAttribute.DISPLAY_NAME] = f'{ns}::{name}'
+        else:
+            data[ASTNodeAttribute.DISPLAY_NAME] = name
+        if (cursor := self.cursor.get_definition()):
+            if (usr := cursor.get_usr()):
+                data[ASTNodeAttribute.DEFINITION] = usr
+
+
+@define
+class MemberReferenceExtractor(ReferenceExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.MEMBER_REFERENCE
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.MEMBER_REF_EXPR
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        if (value := _expression_cursor(cursor, belongs_to=self.belongs_to)) is not None:
+            return value
+        return super()._process_child_cursor(cursor)
 
 
 @define

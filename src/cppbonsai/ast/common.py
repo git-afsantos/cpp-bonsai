@@ -58,6 +58,9 @@ class ASTNodeType(Enum):
     UNARY_OPERATOR = auto()
     BINARY_OPERATOR = auto()
     FUNCTION_CALL = auto()
+    DECL_REFERENCE = auto()
+    MEMBER_REFERENCE = auto()
+    THIS_REFERENCE = auto()
     UNKNOWN_EXPR = auto()
 
     # C++ Helper Node
@@ -127,7 +130,18 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.UNARY_OPERATOR
             or self == ASTNodeType.BINARY_OPERATOR
             or self == ASTNodeType.FUNCTION_CALL
+            or self == ASTNodeType.DECL_REFERENCE
+            or self == ASTNodeType.MEMBER_REFERENCE
+            or self == ASTNodeType.THIS_REFERENCE
             or self == ASTNodeType.UNKNOWN_EXPR
+        )
+
+    @property
+    def is_reference(self) -> bool:
+        return (
+            self == ASTNodeType.DECL_REFERENCE
+            or self == ASTNodeType.MEMBER_REFERENCE
+            or self == ASTNodeType.THIS_REFERENCE
         )
 
     @property
@@ -149,6 +163,7 @@ class ASTNodeAttribute(Enum):
     ATTRIBUTES = auto()
     VALUE = auto()
     PARAMETER_INDEX = auto()
+    DEFINITION = auto()
     CURSOR = auto()
 
 
