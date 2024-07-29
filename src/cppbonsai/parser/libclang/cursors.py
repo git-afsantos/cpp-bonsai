@@ -5,7 +5,7 @@
 # Imports
 ###############################################################################
 
-from typing import Any, Final, Iterable, List, Optional
+from typing import Any, Final, Iterable, List, Mapping, Optional
 
 import logging
 from pathlib import Path
@@ -24,6 +24,47 @@ TK = clang.TokenKind
 CK = clang.CursorKind
 
 logger: Final[logging.Logger] = logging.getLogger(__name__)
+
+UNARY_POSTFIX_OPERATORS: Final[Iterable[str]] = ('++', '--')
+UNARY_PREFIX_OPERATORS: Final[Iterable[str]] = ('++', '--', '~', '!', '+', '-')
+
+BINARY_OPERATORS: Final[Mapping[int, str]] = {}
+try:
+    BINARY_OPERATORS[clang.BinaryOperator.PtrMemD.value] = '->*'
+    BINARY_OPERATORS[clang.BinaryOperator.PtrMemI.value] = '.*'
+    BINARY_OPERATORS[clang.BinaryOperator.Mul.value] = '*'
+    BINARY_OPERATORS[clang.BinaryOperator.Div.value] = '/'
+    BINARY_OPERATORS[clang.BinaryOperator.Rem.value] = '%'
+    BINARY_OPERATORS[clang.BinaryOperator.Add.value] = '+'
+    BINARY_OPERATORS[clang.BinaryOperator.Sub.value] = '-'
+    BINARY_OPERATORS[clang.BinaryOperator.Shl.value] = '<<'
+    BINARY_OPERATORS[clang.BinaryOperator.Shr.value] = '>>'
+    BINARY_OPERATORS[clang.BinaryOperator.Cmp.value] = '<=>'
+    BINARY_OPERATORS[clang.BinaryOperator.LT.value] = '<'
+    BINARY_OPERATORS[clang.BinaryOperator.GT.value] = '>'
+    BINARY_OPERATORS[clang.BinaryOperator.LE.value] = '<='
+    BINARY_OPERATORS[clang.BinaryOperator.GE.value] = '>='
+    BINARY_OPERATORS[clang.BinaryOperator.EQ.value] = '=='
+    BINARY_OPERATORS[clang.BinaryOperator.NE.value] = '!='
+    BINARY_OPERATORS[clang.BinaryOperator.And.value] = '&'
+    BINARY_OPERATORS[clang.BinaryOperator.Xor.value] = '^'
+    BINARY_OPERATORS[clang.BinaryOperator.Or.value] = '|'
+    BINARY_OPERATORS[clang.BinaryOperator.LAnd.value] = '&&'
+    BINARY_OPERATORS[clang.BinaryOperator.LOr.value] = '||'
+    BINARY_OPERATORS[clang.BinaryOperator.Assign.value] = '='
+    BINARY_OPERATORS[clang.BinaryOperator.MulAssign.value] = '*='
+    BINARY_OPERATORS[clang.BinaryOperator.DivAssign.value] = '/='
+    BINARY_OPERATORS[clang.BinaryOperator.RemAssign.value] = '%='
+    BINARY_OPERATORS[clang.BinaryOperator.AddAssign.value] = '+='
+    BINARY_OPERATORS[clang.BinaryOperator.SubAssign.value] = '-='
+    BINARY_OPERATORS[clang.BinaryOperator.ShlAssign.value] = '<<='
+    BINARY_OPERATORS[clang.BinaryOperator.ShrAssign.value] = '>>='
+    BINARY_OPERATORS[clang.BinaryOperator.AndAssign.value] = '&='
+    BINARY_OPERATORS[clang.BinaryOperator.XorAssign.value] = '^='
+    BINARY_OPERATORS[clang.BinaryOperator.OrAssign.value] = '|='
+    BINARY_OPERATORS[clang.BinaryOperator.Comma.value] = ','
+except AttributeError:
+    pass  # old version of libclang
 
 ###############################################################################
 # Cursor Handlers
@@ -375,6 +416,10 @@ class MethodDeclarationExtractor(FunctionDeclarationExtractor):
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.CXX_METHOD
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        data[ASTNodeAttribute.ACCESS_SPECIFIER] = get_access_specifier(self.cursor).value
+        return super()._write_custom_attributes(data)
 
 
 @define
@@ -728,14 +773,6 @@ class OperatorExtractor(ExpressionExtractor):
         self._arg_index += 1
         return _expression_cursor(cursor, belongs_to=self.belongs_to, param_index=self._arg_index)
 
-    def _write_custom_attributes(self, data: AttributeMap):
-        super()._write_custom_attributes(data)
-        for token in self.cursor.get_tokens():
-            if token.kind == TK.PUNCTUATION:
-                data[ASTNodeAttribute.NAME] = token.spelling
-                data[ASTNodeAttribute.DISPLAY_NAME] = f'operator{token.spelling}'
-                break
-
 
 @define
 class UnaryOperatorExtractor(OperatorExtractor):
@@ -745,6 +782,20 @@ class UnaryOperatorExtractor(OperatorExtractor):
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.UNARY_OPERATOR
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        super()._write_custom_attributes(data)
+        # post-fix operators have priority
+        # https://cplusplus.com/doc/tutorial/operators/
+        tokens = list(self.cursor.get_tokens())
+        if (name := tokens[-1].spelling) in UNARY_POSTFIX_OPERATORS:
+            data[ASTNodeAttribute.NAME] = name
+            data[ASTNodeAttribute.DISPLAY_NAME] = f'operator{name}'
+        elif (name := tokens[0].spelling) in UNARY_PREFIX_OPERATORS:
+            data[ASTNodeAttribute.NAME] = name
+            data[ASTNodeAttribute.DISPLAY_NAME] = f'operator{name}'
+        else:
+            logger.debug(f'unknown unary operator: {tokens}')
 
 
 @define
@@ -756,6 +807,22 @@ class BinaryOperatorExtractor(OperatorExtractor):
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
         return cursor.kind == CK.BINARY_OPERATOR
 
+    def _write_custom_attributes(self, data: AttributeMap):
+        super()._write_custom_attributes(data)
+        if BINARY_OPERATORS:
+            opcode = self.cursor.binary_operator.value
+            name: str = BINARY_OPERATORS[opcode]
+        else:
+            # older version of libclang
+            # all operators are infix
+            prefix: int = len(list(next(self.cursor.get_children()).get_tokens()))
+            tokens = list(self.cursor.get_tokens())[prefix:]
+            for token in tokens:
+                if token.kind == TK.PUNCTUATION:
+                    data[ASTNodeAttribute.NAME] = token.spelling
+                    data[ASTNodeAttribute.DISPLAY_NAME] = f'operator{token.spelling}'
+                    break
+7
 
 @define
 class ThisReferenceExtractor(ExpressionExtractor):
