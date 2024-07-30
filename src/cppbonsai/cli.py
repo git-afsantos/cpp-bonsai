@@ -68,6 +68,14 @@ def parse_arguments(argv: Optional[List[str]]) -> Dict[str, Any]:
     )
 
     parser.add_argument(
+        '-i',
+        '--include',
+        metavar='PATH',
+        action='append',
+        help='add an include path',
+    )
+
+    parser.add_argument(
         'args',
         metavar='ARG',
         nargs=argparse.REMAINDER,
@@ -117,6 +125,14 @@ def do_real_work(args: Dict[str, Any], configs: Dict[str, Any]) -> None:
         lib_file=Path('/usr/lib/llvm-15/lib/libclang.so'),
         includes=Path('/usr/lib/llvm-15/lib/clang/15.0.7/include'),
     )
+
+    includes: List[Path] = []
+    for arg in args.get('include', ()):
+        logger.debug(f'add include path: {arg}')
+        path = Path(arg).resolve(strict=True)
+        logger.debug(f'resolved include path: {path}')
+        includes.append(path)
+    parser.user_includes = includes
 
     for arg in args['args']:
         logger.debug(f'file path argument: {arg}')

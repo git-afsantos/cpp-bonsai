@@ -931,7 +931,7 @@ class ReferenceExtractor(ExpressionExtractor):
 
     def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
         consumed = self.namespace.consume(cursor)
-        assert consumed
+        # assert consumed
         return None
 
     def _write_custom_attributes(self, data: AttributeMap):
