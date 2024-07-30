@@ -444,7 +444,7 @@ class ConstructorExtractor(FunctionDeclarationExtractor):
 
     def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
         # https://en.cppreference.com/w/cpp/language/constructor
-        if cursor.kind == CK.MEMBER_REF:
+        if cursor.kind == CK.MEMBER_REF or cursor.kind == CK.TYPE_REF:
             self._member = MemberInitializerExtractor(cursor)
             return None
         if self._member is not None and cursor.kind.is_expression():
@@ -632,7 +632,7 @@ class MemberInitializerExtractor(CursorDataExtractor):
         return ASTNodeType.MEMBER_INITIALIZER
 
     def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
-        return cursor.kind == CK.MEMBER_REF
+        return cursor.kind == CK.MEMBER_REF or cursor.kind == CK.TYPE_REF
 
     def _process_child_cursors(self) -> List[CursorDataExtractor]:
         dependencies: List[CursorDataExtractor] = super()._process_child_cursors()
