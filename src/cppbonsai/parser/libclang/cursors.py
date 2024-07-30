@@ -732,6 +732,13 @@ def _expression_cursor(
             param_index=param_index,
             data_type=data_type,
         )
+    if cursor.kind == CK.PAREN_EXPR:
+        return ParenthesisExpressionExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind.is_expression():
         return UnknownExpressionExtractor(
             cursor,
@@ -770,6 +777,19 @@ class UnknownExpressionExtractor(ExpressionExtractor):
     def _write_custom_attributes(self, data: AttributeMap):
         super()._write_custom_attributes(data)
         data[ASTNodeAttribute.CURSOR] = str(self.cursor.kind)
+
+
+@define
+class ParenthesisExpressionExtractor(ExpressionExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.PARENTHESIS_EXPR
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.PAREN_EXPR
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        return _expression_cursor(cursor, belongs_to=self.belongs_to)
 
 
 @define
