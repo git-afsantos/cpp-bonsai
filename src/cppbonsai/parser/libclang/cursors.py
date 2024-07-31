@@ -739,6 +739,13 @@ def _expression_cursor(
             param_index=param_index,
             data_type=data_type,
         )
+    if cursor.kind == CK.LAMBDA_EXPR:
+        return LambdaExpressionExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind.is_expression():
         return UnknownExpressionExtractor(
             cursor,
@@ -1000,3 +1007,26 @@ class FunctionCallExtractor(ExpressionExtractor):
     def _write_custom_attributes(self, data: AttributeMap):
         super()._write_custom_attributes(data)
         data[ASTNodeAttribute.NAME] = self.cursor.spelling
+
+
+@define
+class LambdaExpressionExtractor(ExpressionExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.LAMBDA_EXPR
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.LAMBDA_EXPR
+
+    def _process_child_cursor(self, cursor: clang.Cursor) -> CursorDataExtractor | None:
+        if cursor.kind == CK.PARM_DECL:
+            return ParameterDeclarationExtractor(cursor, belongs_to=self.usr)
+        if cursor.kind == CK.COMPOUND_STMT:
+            return CompoundStatementExtractor(cursor, belongs_to=self.usr)
+        return _expression_cursor(cursor, belongs_to=self.usr)
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        super()._write_custom_attributes(data)
+        if (result_type := self.cursor.result_type):
+            if result_type.get_canonical().kind != clang.TypeKind.INVALID:
+                data[ASTNodeAttribute.RETURN_TYPE] = result_type.spelling

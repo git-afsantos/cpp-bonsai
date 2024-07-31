@@ -65,6 +65,7 @@ class ASTNodeType(Enum):
     MEMBER_REFERENCE = auto()
     THIS_REFERENCE = auto()
     PARENTHESIS_EXPR = auto()
+    LAMBDA_EXPR = auto()
     UNKNOWN_EXPR = auto()
 
     # C++ Helper Node
@@ -139,6 +140,7 @@ class ASTNodeType(Enum):
             or self == ASTNodeType.MEMBER_REFERENCE
             or self == ASTNodeType.THIS_REFERENCE
             or self == ASTNodeType.PARENTHESIS_EXPR
+            or self == ASTNodeType.LAMBDA_EXPR
             or self == ASTNodeType.UNKNOWN_EXPR
         )
 

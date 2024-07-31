@@ -25,6 +25,9 @@ public:
         RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
         this->publisher_->publish(message);
       };
+    ([this]() -> void { this->count_++; });
+    [this]() -> void { this->count_++; }();
+    ([this](size_t c) -> void { this->count_ += c; })(1);
     timer_ = this->create_wall_timer(500ms, timer_callback);
   }
 
