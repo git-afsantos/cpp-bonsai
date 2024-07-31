@@ -739,6 +739,13 @@ def _expression_cursor(
             param_index=param_index,
             data_type=data_type,
         )
+    if cursor.kind == CK.CHARACTER_LITERAL:
+        return CharacterLiteralExtractor(
+            cursor,
+            belongs_to=belongs_to,
+            param_index=param_index,
+            data_type=data_type,
+        )
     if cursor.kind == CK.PAREN_EXPR:
         return ParenthesisExpressionExtractor(
             cursor,
@@ -856,6 +863,24 @@ class BooleanLiteralExtractor(ExpressionExtractor):
         for token in self.cursor.get_tokens():
             if token.kind == TK.KEYWORD:
                 if (value := token.spelling) == 'true' or value == 'false':
+                    data[ASTNodeAttribute.VALUE] = value
+                    break
+
+
+@define
+class CharacterLiteralExtractor(ExpressionExtractor):
+    @property
+    def node_type(self) -> ASTNodeType:
+        return ASTNodeType.CHARACTER_LITERAL
+
+    def _is_valid_cursor(self, cursor: clang.Cursor) -> bool:
+        return cursor.kind == CK.CHARACTER_LITERAL
+
+    def _write_custom_attributes(self, data: AttributeMap):
+        super()._write_custom_attributes(data)
+        for token in self.cursor.get_tokens():
+            if token.kind == TK.LITERAL:
+                if (value := token.spelling).startswith("'"):
                     data[ASTNodeAttribute.VALUE] = value
                     break
 

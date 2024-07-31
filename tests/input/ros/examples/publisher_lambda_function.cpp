@@ -27,7 +27,7 @@ public:
       };
     ([this]() -> void { this->count_++; });
     [this]() -> void { this->count_++; }();
-    ([this](size_t c) -> void { this->count_ += c; })(1);
+    ([this](size_t c) -> void { this->count_ += c; })('c');
     timer_ = this->create_wall_timer(500ms, timer_callback);
   }
 
